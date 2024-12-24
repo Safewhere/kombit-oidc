@@ -69,6 +69,17 @@ namespace WebAppNetCore
             };
             connectOptions.Events = new OpenIdConnectEvents
             {
+                OnRedirectToIdentityProvider = async (context) =>
+                {
+                    Console.WriteLine("OnRedirectToIdentityProvider.");
+
+                    if (context.Properties.Parameters.TryGetValue("acr_values", out object acrValues))
+                    {
+                        context.ProtocolMessage.Parameters.Add("acr_values", acrValues.ToString());
+                    }
+
+                    await Task.FromResult(0);
+                },
                 OnAuthorizationCodeReceived = async (context) =>
                 {
                     Console.WriteLine("OnAuthorizationCodeReceived.");

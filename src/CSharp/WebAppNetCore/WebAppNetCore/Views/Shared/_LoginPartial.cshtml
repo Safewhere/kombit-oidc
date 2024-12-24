@@ -1,31 +1,48 @@
 @using Microsoft.Extensions.Options
 @using System.Security.Principal
 
+@{
+    var availableLoas = new List<string> { 
+      "",
+      "https://data.gov.dk/concept/core/nsis/loa/High",
+      "https://data.gov.dk/concept/core/nsis/loa/Low",
+      "https://data.gov.dk/concept/core/nsis/loa/Substantial",
+      "urn:dk:gov:saml:attribute:AssuranceLevel:1",
+      "urn:dk:gov:saml:attribute:AssuranceLevel:2",
+      "urn:dk:gov:saml:attribute:AssuranceLevel:3",
+      "urn:dk:gov:saml:attribute:AssuranceLevel:4"
+    };
+    string Loa = "";
+}
 
 @if (User.Identity.IsAuthenticated)
 {
-    <ul class="nav navbar-nav navbar-right">
-        <li class="navbar-text">
-            Hello, @User.Identity.Name!
-        </li>
-        <li><a href="@ViewData["EditMyProfileUri"]?origin=@ViewData["Origin"]" class="trigger">Edit My Profile</a></li>
-
+    <div class="alert alert-success" role="alert"> Hello, @User.Identity.Name!</div>
+    <div class="alert alert-info" role="alert">
+        <label for="Loa">Assuarance Level</label>
+        <div class="input-group">
+            <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
+        </div>
+        <br />
+        <div class="input-group">
+            <a href="javascript:login(true);" class="btn btn-primary">Force Authn</a>
+        </div>
+    </div>
+    <div class="alert alert-info" role="alert">
+        <a asp-area="" asp-controller="Account" asp-action="SignOut" class="btn btn-primary">Sign out</a>
         @if (ViewData["EnablePostLogout"] == "Yes")
         {
-            <li class="navbar-text">
-                <form class="nav navbar-nav navbar-left" action="@ViewData["EndSessionUri"]" enctype="application/x-www-form-urlencoded" method="post">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="id_token_hint" value="@ViewData["IdTokenHint"]" />
-                    <input type="hidden" name="post_logout_redirect_uri" value="@ViewData["RedirectUrl"]" />
-                    <input name="Authorize" class="postlogoutbutton" type="submit" value="PostLogout" />
-                </form>
-            </li>
+            <br />
+            <form action="@ViewData["EndSessionUri"]" enctype="application/x-www-form-urlencoded" method="post" style="padding-top:10px">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id_token_hint" value="@ViewData["IdTokenHint"]" />
+                <input type="hidden" name="post_logout_redirect_uri" value="@ViewData["RedirectUrl"]" />
+                <input name="Authorize" type="submit" value="Post logout" class="btn btn-primary" />
+            </form>
         }
-        else
-        {
-            <li><a asp-area="" asp-controller="Account" asp-action="SignOut">Sign out</a></li>
-        }
-    </ul>
+    </div>
+
+
     @if (ViewData["EnableSessionManagement"] == "Yes")
     {
         <iframe frameborder="0" allowtransparency="true" height="0" width="0" src="@Url.Action("RPIFrame", "Account")"></iframe>
@@ -34,7 +51,21 @@
 }
 else
 {
-    <ul class="nav navbar-nav navbar-right">
-        <li><a asp-area="" asp-controller="Account" asp-action="Signin">Sign in</a></li>
-    </ul>
+    <label for="Loa">Assuarance Level</label>
+    <div class="input-group">
+        <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
+    </div>
+    <br />
+    <div class="input-group">
+        <a href="javascript:login(false);" class="btn btn-primary">Sign in</a>
+    </div>
 }
+
+<script>
+    function login(forceLogin)
+    {
+        var loa = document.getElementById("Loa").value;
+        var url = "/Account/Signin?loa=" + loa + "&forceLogin=" + forceLogin;
+        window.location.href = url;
+    }
+</script>
