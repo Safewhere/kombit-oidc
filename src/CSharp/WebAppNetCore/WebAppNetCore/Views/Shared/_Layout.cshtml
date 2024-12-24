@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - Sample application</title>
+    <title>@ViewData["Title"] - OIO OIDC Sample</title>
 
     <environment include="Development">
         <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.css" />
@@ -38,7 +38,7 @@
                     <span class="icon-bar"></span>
                     <span class="icon-bar"></span>
                 </button>
-                <a asp-area="" asp-controller="Home" asp-action="Index" class="navbar-brand">WebAppNetCore</a>
+                <a asp-area="" asp-controller="Home" asp-action="Index" class="navbar-brand">OIO OIDC ASP.NET Core</a>
             </div>
             <div class="navbar-collapse collapse">
                 <ul class="nav navbar-nav">
@@ -46,15 +46,19 @@
                     <li><a asp-area="" asp-controller="Home" asp-action="About">About</a></li>
                     <li><a asp-area="" asp-controller="Home" asp-action="Contact">Contact</a></li>
                 </ul>
-                @await Html.PartialAsync("_LoginPartial")
             </div>
         </div>
     </nav>
     <div class="container body-content">
+        <hr />
+        @await Html.PartialAsync("_LoginPartial")
+        <hr />
         @RenderBody()
         <hr />
         <footer>
-            <p>&copy; @DateTime.Now.Year - Safewhere Identify Sample application</p>
+            <p>
+                &copy; @DateTime.Now.Year - Safewhere Identify - OIO OIDC ASP.NET Core Sample application
+            </p>
             <br />
             <p align="left"><label name='notice' id='notice' /></p>
         </footer>

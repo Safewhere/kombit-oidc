@@ -26,10 +26,14 @@ namespace WebAppNetCore.Controllers
 
         // GET: /Account/SignIn
         [HttpGet]
-        public IActionResult SignIn()
+        public IActionResult SignIn([FromQuery] string loa, [FromQuery] bool forceLogin)
         {
-            return Challenge(
-                new AuthenticationProperties { RedirectUri = "/" }, OpenIdConnectDefaults.AuthenticationScheme);
+            var properties = new AuthenticationProperties { RedirectUri = "/" };
+            if(!string.IsNullOrEmpty(loa))
+                properties.SetParameter("acr_values", loa);
+            if (forceLogin)
+                properties.SetParameter("prompt", "login");
+            return Challenge(properties, OpenIdConnectDefaults.AuthenticationScheme);
         }
 
         // GET: /Account/SignOut
