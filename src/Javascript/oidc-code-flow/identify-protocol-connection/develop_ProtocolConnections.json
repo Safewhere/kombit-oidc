@@ -1,0 +1,186 @@
+[
+  {
+    "usePersistentPseudonym": false,
+    "createdWithCustomizedHomeRealmDiscoverySelection": true,
+    "scopes": [],
+    "appliedHomeRealmDiscoveryRules": [],
+    "enabled": true,
+    "accessOrganizationName": "Root",
+    "dependencyConnectionNames": [],
+    "claimSets": [],
+    "claimTransformations": [],
+    "configuration": null,
+    "configurations": [
+      {
+        "clientId": "oidc-code-flow",
+        "clientSecret": "oidc-code-flow-client-secret",
+        "redirectUrl": null,
+        "redirectUris": [
+          "https://localhost:5173/oidc_callback",
+          "https://spa-oidc.safewhere.local/oidc_callback"
+        ],
+        "requestObjectUris": [],
+        "sectorIdentifierUri": null,
+        "appName": "oidc-code-flow",
+        "appLogoUrl": "",
+        "appAudience": "oidc-code-flow",
+        "implicitFlow": false,
+        "codeFlow": true,
+        "clientCredentialsFlow": false,
+        "passwordFlow": false,
+        "devicePairing": false,
+        "allowHttpRedirect": false,
+        "useAsOpenId": true,
+        "jwsAlgorithm": "RSASigning",
+        "symmetricSigningKey": "",
+        "encryptionCertificate": {
+          "isSelfSigned": false,
+          "revocationCheck": "None",
+          "storeReference": {
+            "storeName": "TrustedPeople",
+            "storeLocation": "LocalMachine"
+          },
+          "findCriterion": {
+            "findType": "FindByThumbprint",
+            "value": "",
+            "validOnly": false
+          },
+          "keyName": ""
+        },
+        "tokenSecurityMode": "SigningOnly",
+        "tokenLifetime": 60,
+        "allowRefreshToken": false,
+        "updateAccessTokenClaimsOnRefresh": false,
+        "issueNewRefreshTokenForEveryTokenExchange": false,
+        "refreshTokenLifetime": 60,
+        "openIdLogoutRedirectUrl": "https://spa-oidc.safewhere.local",
+        "performSessionStatusNotification": true,
+        "attemptAutomaticAuthSelection": false,
+        "encryptionCertificateRevocationCheck": "None",
+        "handleHomeRealmDiscovery": "ProceedToNextMechanism",
+        "disableAutomaticAuthSelectionIfNotSupportedByAllLoginModules": false,
+        "autoHRDTimeout": 1000,
+        "allowUserOverrideAutoHRD": false,
+        "codeLifetime": 60,
+        "numberOfCodeGroup": 2,
+        "doNotAskForConsent": false,
+        "isPresentLoginSelector": false,
+        "runCustomHomeRealmDiscoveryRulesBeforeStaticRules": false,
+        "tokenEndpointAuthenticationMethod": "None",
+        "clientJwks": "",
+        "clientJwksUri": "",
+        "signUserInfoResponse": false,
+        "subjectType": "Public",
+        "subjectIdentifierHashSalt": "xOuO7jjeNKzIQQ==",
+        "userClaimsPlacement": "AccessToken",
+        "allowLogoutWithoutIDTokenHint": false,
+        "allowSamlBearerFlow": false,
+        "allowJwtBearerFlow": false,
+        "allowTokenExchange": false,
+        "allowTokenRevocationAndIntrospection": false,
+        "bootstrapTokenTrustedIssuers": [],
+        "receivedSecurityTokenEncryptionCertificate": {
+          "isSelfSigned": false,
+          "revocationCheck": "None",
+          "storeReference": {
+            "storeName": "My",
+            "storeLocation": "LocalMachine"
+          },
+          "findCriterion": {
+            "findType": "FindByThumbprint",
+            "value": "",
+            "validOnly": false
+          },
+          "keyName": ""
+        },
+        "receivedSecurityTokenAzureKeyVault": {
+          "azureKeyVaultEnable": false,
+          "useManagedIdentity": false,
+          "azureTenantId": "",
+          "azureClientId": "",
+          "azureClientSecret": "",
+          "azureKeyVaultUrl": "",
+          "azureKeyVaultKeyName": "",
+          "base64Certificate": "",
+          "keyVaultMode": "Certificate"
+        },
+        "validateTargetAudience": false,
+        "detectReplayAttackWhenDoingTokenExchange": false,
+        "signingCertificateRevocationCheck": "None",
+        "clientCertificateRevocationCheck": "None",
+        "issuerSymmetricSigningKeys": [],
+        "useNameIdToMatchLogoutRequestWithSession": false,
+        "actAsAuthorizationClaimRules": [],
+        "applicationType": "JavaScript",
+        "allowedCORSOriginsDomains": [],
+        "issueRefreshToken": true,
+        "idTokenSigningAlgorithm": "RS256",
+        "idTokenKeyTransportAlgorithm": "",
+        "idTokenEncryptionMethod": "",
+        "frontChannelLogoutUri": null,
+        "backChannelLogoutUri": null,
+        "interceptorService": {
+          "useInterceptor": false,
+          "interceptorViewName": "",
+          "interceptorService": "None",
+          "interceptorDependencyService": "None",
+          "interceptorScriptName": "",
+          "additionalSettings": []
+        },
+        "authenticationListViewName": "",
+        "connectionAdditionalSettings": [
+          {
+            "Key": "connector",
+            "Value": "openidconnect"
+          },
+          {
+            "Key": "AdditionalValidationRules",
+            "Value": "{ \"authorize\": { \"requiredParameters\" : \"state, code_challenge, code_challenge_method, nonce\", \"prohibitedParameters\" : \"display, response_mode, id_token_hint\", \"redirectUriScheme\": \"https\" } }"
+          }
+        ],
+        "consent": {
+          "showConsent": false,
+          "rememberConsent": true,
+          "consentText": "",
+          "motivation": ""
+        },
+        "authenticationRequestPolicyScript": "",
+        "tokenIssuancePolicyScript": "",
+        "requestedAuthenticationContextValidationScript": "",
+        "stepUpAuthnRequestScript": "",
+        "dependencyConnectionPolicyScript": "",
+        "offerRememberUserChoiceOfIdentityProvider": false,
+        "homeRealmDiscoveryScript": "",
+        "configurationId": "b8947428-096b-8d32-b2d2-8e3cc5529112",
+        "configurationType": "OAuthProtocol",
+        "activationTime": {
+          "startTime": "0001-01-01T00:00:00Z",
+          "endTime": "9999-12-31T23:59:59Z"
+        }
+      }
+    ],
+    "pluginType": "OAuth20",
+    "connectionName": "oidc-code-flow",
+    "organizationName": "Root",
+    "connectionType": "Protocol",
+    "metadataReference": null,
+    "autoSetAllDependencies": false,
+    "descriptionLocalizations": [],
+    "newName": null,
+    "id": "807bc0aa-a375-4c13-8fb2-c62077580e28",
+    "externalId": null,
+    "meta": {
+      "created": "0001-01-01T00:00:00Z",
+      "lastModified": "0001-01-01T00:00:00Z",
+      "location": "/admin/api/rest/v2/connections/807bc0aa-a375-4c13-8fb2-c62077580e28",
+      "version": null,
+      "attributes": null
+    },
+    "name": "oidc-code-flow",
+    "description": null,
+    "endpoint": "/admin/api/rest/v2/Connections",
+    "schema": "urn:scim:schemas:core:2.0:Connection",
+    "schemaExtensions": null,
+    "schemaExtensionsDetail": null
+  }
+]

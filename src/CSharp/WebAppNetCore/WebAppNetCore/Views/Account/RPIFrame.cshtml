@@ -1,0 +1,100 @@
+﻿@{
+    Layout = null;
+}
+<html>
+<head>
+    <title>OpenID Connect Session Management Sample RP : RP iframe</title>
+    <script src="~/lib/jquery/dist/jquery.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/sha256.js"></script>
+
+    <script language="JavaScript" type="text/javascript">
+        var stat = "unchanged";
+        var errorAction = '';
+        var callback = false;
+
+        var action = "@ViewData["Action"]";
+        if (action == "ReauthenticationCallBack") {
+            callback = true;
+        };
+        
+        var client_id = "@Html.Raw(ViewData["clientId"])";
+        var session_state = "@Html.Raw(ViewData["session_state"])";
+        var mes = client_id + " " + session_state;
+
+        var opDomain = "@ViewData["OPDomain"]";
+
+        if (callback == true) {
+            extractCallback();
+        }
+
+        var checkSessionInterval = null;
+
+        function extractCallback() {
+            var params = {},
+                queryString = location.hash.substring(1),
+                regex = /([^&=]+)=([^&]*)/g,
+                m;
+            while (m = regex.exec(queryString)) {
+                params[decodeURIComponent(m[1])] = decodeURIComponent(m[2]);
+            }
+
+            if (params.error) {
+                errorAction = params.error === 'login_required' ? 'relogin' : 'logout';
+                return;
+            }
+            var idtoken = params.id_token;            
+            window.parent.document.getElementById('notice').innerHTML = "Callback id_token..." + idtoken;
+            session_state = params.session_state;
+            mes = client_id + " " + session_state;
+        }
+
+        function check_session() {
+            var win = window.parent.document.getElementById("opIFrame").contentWindow;
+            win.postMessage(mes, opDomain);
+        }
+
+        function setTimer() {
+            if (errorAction !== '') {
+                window.parent.location = errorAction === 'relogin' ? "@Url.Action("SignIn", "Account")" : "@Url.Action("SignedOutCallback", "Account")";
+                return;
+            } 
+
+            window.parent.document.getElementById('notice').innerHTML = "Checking OP Session Status...";
+            setTimeout(function () {
+                checkSessionInterval = setInterval("check_session()", 3 * 1000);
+            }, 3000);
+        }
+
+        if (window.addEventListener) {
+            window.addEventListener("message", receiveMessage, false);
+        } else if (window.attachEvent) {
+            window.attachEvent("onmessage", receiveMessage);
+        }
+
+        function receiveMessage(e) {
+            if (e.origin !== opDomain) { return; }
+            stat = e.data;
+            noticeToParentWindow(stat);
+        }
+
+        function noticeToParentWindow(stat) {
+            if (stat == "changed") {
+                window.parent.document.getElementById('notice').innerHTML = "stat is changed now. Sending re-authentication with prompt=none to fetch current user identity now";
+                reauthenticate();
+                clearInterval(checkSessionInterval);
+            }
+            //do nothing
+        }
+
+        function reauthenticate() {
+            window.parent.document.getElementById('notice').innerHTML = "start reauthentication";
+            window.location= "@Html.Raw(ViewData["Reauthenticate"])";
+        }
+    </script>
+</head>
+<body onload="setTimer()">
+    This is RP_IFrame
+</body>
+</html>
