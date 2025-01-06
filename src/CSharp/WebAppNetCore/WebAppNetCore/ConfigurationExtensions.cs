@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 
 namespace WebAppNetCore
@@ -102,6 +103,11 @@ namespace WebAppNetCore
             var enablePostLogout = configuration["OpenIdConnectOptions:EnablePostLogout"];
             bool.TryParse(enablePostLogout, out bool result);
             return result;
+        }
+
+        public static OpenIdConnectRedirectBehavior AuthorizationEndpointMethod(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:AuthorizationEndpointMethod"] == "POST"? OpenIdConnectRedirectBehavior.FormPost : OpenIdConnectRedirectBehavior.RedirectGet;
         }
     }
 }

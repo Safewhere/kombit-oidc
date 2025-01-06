@@ -57,6 +57,8 @@ namespace WebAppNetCore
                 connectOptions.ResponseMode = responseMode;
             }
 
+            connectOptions.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
+
             connectOptions.Configuration = new OpenIdConnectConfiguration()
             {
                 AuthorizationEndpoint = configuration.AuthorizationEndpoint(),
