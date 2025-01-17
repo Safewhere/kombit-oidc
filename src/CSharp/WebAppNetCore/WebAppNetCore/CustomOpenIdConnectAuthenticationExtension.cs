@@ -66,20 +66,27 @@ namespace WebAppNetCore
                 UserInfoEndpoint = configuration.UserInfoEndpoint(),
                 EndSessionEndpoint = configuration.EndSessionEndpoint(),
                 
-                HttpLogoutSupported = true,
-
+                HttpLogoutSupported = true
             };
             connectOptions.Events = new OpenIdConnectEvents
             {
                 OnRedirectToIdentityProvider = async (context) =>
                 {
                     Console.WriteLine("OnRedirectToIdentityProvider.");
-
+                    context.Options.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
                     if (context.Properties.Parameters.TryGetValue("acr_values", out object acrValues))
                     {
                         context.ProtocolMessage.Parameters.Add("acr_values", acrValues.ToString());
                     }
 
+                    await Task.FromResult(0);
+                },
+                OnRedirectToIdentityProviderForSignOut = async (context) =>
+                {
+                    Console.WriteLine("OnRedirectToIdentityProviderForSignOut.");
+                    //Hack: POST Authentication Method is used for Logout in the OpenIdConnectHanler, it is not a thing of our demo (we have a separate button to POST logout)
+                    context.Options.AuthenticationMethod = OpenIdConnectRedirectBehavior.RedirectGet;
+                    context.ProtocolMessage.PostLogoutRedirectUri = context.Properties.RedirectUri;
                     await Task.FromResult(0);
                 },
                 OnAuthorizationCodeReceived = async (context) =>
