@@ -40,7 +40,7 @@ namespace WebAppNetCore.Controllers
         [HttpGet]
         public IActionResult SignOut()
         {
-            var callbackUrl = Url.Action(nameof(SignedOut), "Account", values: null, protocol: Request.Scheme);
+            var callbackUrl = Url.Action(nameof(SignedOutCallback), "Account", values: null, protocol: Request.Scheme);
             var properties = new AuthenticationProperties { RedirectUri = callbackUrl };
             return SignOut(properties,
                 CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme);
