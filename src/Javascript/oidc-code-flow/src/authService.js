@@ -80,6 +80,7 @@ class AuthService {
         }
         catch (e) {
             console.log("Error handling callback: ", e);
+            throw e;
         }
     }
 

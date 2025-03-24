@@ -1,16 +1,79 @@
-<script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { authService } from './../authService';  // Ensure this imports your authService
+<template>
+  <div class="container">
+    <header>
+      <h1>SPA OIDC client application</h1>
+      <div>
+        <div v-if="!user">
+          <button @click="login">Login</button>
+        </div>
+        <div v-else>
+          <div class="security-level">
+            <label for="auth-level">Select Security Level:</label>
+            <select id="auth-level" v-model="selectedSecurityLevel">
+              <option value="" selected>None</option>
+              <option v-for="option in securityLevels" :key="option" :value="option">
+                {{ option }}
+              </option>
+            </select>
+          </div>
 
-const user = ref<any>(null);
-const accessToken = ref<string | null>(null);
-const idToken = ref<string | null>(null);
-const accessTokenHeader = ref<any>(null);
-const accessTokenPayload = ref<any>(null);
-const idTokenHeader = ref<any>(null);
-const idTokenPayload = ref<any>(null);
-const selectedSecurityLevel = ref<string>('');
+          <h4>Welcome, {{ user.profile.name }}</h4>
+          <button @click="logout">Logout</button>
+          <button @click="forceAuthn">Force authn</button>
+        </div>
+      </div>
+    </header>
 
+    <div v-if="user">
+      <div v-if="accessToken">
+        <h2>Access Token</h2>
+        <p class="token">{{ accessToken }}</p>
+        <div class="decoded" v-if="accessTokenHeader">
+          <h3>Header</h3>
+          <p>{{ accessTokenHeader }}</p>
+        </div>
+        <div class="decoded" v-if="accessTokenPayload">
+          <h3>Payload</h3>
+          <p>{{ accessTokenPayload }}</p>
+        </div>
+      </div>
+
+      <div v-if="idToken">
+        <h2>ID Token</h2>
+        <p class="token">{{ idToken }}</p>
+        <div class="decoded" v-if="idTokenHeader">
+          <h3>Header</h3>
+          <p class="token">{{ idTokenHeader }}</p>
+        </div>
+        <div class="decoded" v-if="idTokenPayload">
+          <h3>Payload</h3>
+          <p class="token">{{ idTokenPayload }}</p>
+        </div>
+      </div>
+    </div>
+
+    <ErrorView v-if="error" :error="error" :description="description" />
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
+import { authService } from './../authService';
+import ErrorView from './ErrorView.vue';
+
+const user = ref(null);
+const accessToken = ref(null);
+const idToken = ref(null);
+const accessTokenHeader = ref(null);
+const accessTokenPayload = ref(null);
+const idTokenHeader = ref(null);
+const idTokenPayload = ref(null);
+const selectedSecurityLevel = ref('');
+const route = useRoute();
+
+const error = computed(() => route.query.error || '');
+const description = computed(() => route.query.description || '');
 
 const securityLevels = [
   "https://data.gov.dk/concept/core/nsis/loa/High",
@@ -66,12 +129,11 @@ const forceAuthn = async () => {
 };
 
 onMounted(async () => {
-  user.value = await authService.getUser(); 
-  if (!user.value) {
-    return; 
-  }
-  accessToken.value = await authService.getAccessToken(); 
-  idToken.value = await authService.getIdToken();  
+  user.value = await authService.getUser();
+  if (!user.value) return;
+
+  accessToken.value = await authService.getAccessToken();
+  idToken.value = await authService.getIdToken();
 
   var decodedAccessToken = await authService.decodeToken(accessToken.value);
   if (decodedAccessToken) {
@@ -86,63 +148,6 @@ onMounted(async () => {
   }
 });
 </script>
-
-<template>
-  <div>
-    <header>
-      <h1>SPA OIDC client application</h1>
-      <div>
-        <div v-if="!user">
-          <button @click="login">Login</button>
-        </div>
-        <div v-else>
-          <div class="security-level">
-            <label for="auth-level">Select Security Level:</label>
-            <select id="auth-level" v-model="selectedSecurityLevel">
-              <option value="" selected>None</option>
-              <option v-for="option in securityLevels" :key="option" :value="option">
-                {{ option }}
-              </option>
-            </select>
-          </div>
-
-          <h4>Welcome, {{ user.profile.name }}</h4>
-          <button @click="logout">Logout</button>
-          <button @click="forceAuthn">Force authn</button>
-        </div>
-      </div>
-    </header>
-    <div v-if="user">
-      <div v-if="accessToken">
-        <h2>Access Token</h2>
-        <p class="token">{{ accessToken }}</p>
-        <div class="decoded" v-if="accessTokenHeader">
-          <h3>Header</h3>
-          <p>{{ accessTokenHeader }}</p>
-        </div>
-        <div class="decoded" v-if="accessTokenPayload">
-          <h3>Payload</h3>
-          <p>{{ accessTokenPayload }}</p>
-        </div>
-      </div>
-
-      <div v-if="idToken">
-        <h2>ID Token</h2>
-        <p class="token">{{ idToken }}</p>
-        <div class="decoded" v-if="idTokenHeader">
-          <h3>Header</h3>
-          <p class="token">{{ idTokenHeader }}</p>
-        </div>
-        <div class="decoded" v-if="idTokenPayload">
-          <h3>Payload</h3>
-          <p class="token">{{ idTokenPayload }}</p>
-        </div>
-      </div>
-    </div>
-
-    
-  </div>
-</template>
 
 <style scoped>
 body {
