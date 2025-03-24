@@ -24,8 +24,15 @@
             <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
         </div>
         <br />
+        <label for="Loa">max_age</label>
         <div class="input-group">
-            <a href="javascript:login(true);" class="btn btn-primary">Force Authn</a>
+            <input id="max_age" type="number" style="width:350px;max-width:350px;" />
+        </div>
+        <br />
+        <div class="input-group">
+            <a href="javascript:login(false, false);" class="btn btn-primary">Log In (with Assuarance Level)</a>
+            <a href="javascript:login(true, false);" class="btn btn-primary">Force Authn</a>
+            <a href="javascript:login(false, true);" class="btn btn-primary">Passive Login</a>
         </div>
     </div>
     <div class="alert alert-info" role="alert">
@@ -56,16 +63,27 @@ else
         <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
     </div>
     <br />
+    <label for="Loa">max_age</label>
     <div class="input-group">
-        <a href="javascript:login(false);" class="btn btn-primary">Sign in</a>
+        <input id="max_age" type="number" style="width:350px;max-width:350px;" />
+    </div>
+
+    <br />
+    <div class="input-group">
+        <a href="javascript:login(false, false);" class="btn btn-primary">Sign in</a>
     </div>
 }
 
 <script>
-    function login(forceLogin)
+    function login(forceLogin, isPassive)
     {
         var loa = document.getElementById("Loa").value;
-        var url = "/Account/Signin?loa=" + loa + "&forceLogin=" + forceLogin;
+        var max_age = document.getElementById("max_age").value;
+        var url = "/Account/Signin?loa=" + loa + "&forceLogin=" + forceLogin + "&isPassive=" + isPassive;
+        if(max_age !== '')
+        {
+            url += "&max_age=" + max_age;
+        }
         window.location.href = url;
     }
 </script>

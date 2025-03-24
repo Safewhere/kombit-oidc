@@ -26,13 +26,19 @@ namespace WebAppNetCore.Controllers
 
         // GET: /Account/SignIn
         [HttpGet]
-        public IActionResult SignIn([FromQuery] string loa, [FromQuery] bool forceLogin)
+        public IActionResult SignIn([FromQuery] string loa, [FromQuery] string max_age, [FromQuery] bool forceLogin, [FromQuery] bool isPassive)
         {
             var properties = new AuthenticationProperties { RedirectUri = "/" };
             if(!string.IsNullOrEmpty(loa))
                 properties.SetParameter("acr_values", loa);
+            if (!string.IsNullOrEmpty(max_age))
+                properties.SetParameter("max_age", max_age);
+
             if (forceLogin)
                 properties.SetParameter("prompt", "login");
+            else if(isPassive)
+                properties.SetParameter("prompt", "none");
+
             return Challenge(properties, OpenIdConnectDefaults.AuthenticationScheme);
         }
 
