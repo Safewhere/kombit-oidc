@@ -25,6 +25,10 @@ const routes: RouteRecordRaw[] = [
         next('/');
       } catch (error) {
         console.error("OIDC callback error:", error);
+        next({
+          path: "/",
+          query: { error: error.error, description: error.error_description },
+        })
         next('/');
       }
     },
