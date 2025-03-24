@@ -79,6 +79,11 @@ namespace WebAppNetCore
                         context.ProtocolMessage.Parameters.Add("acr_values", acrValues.ToString());
                     }
 
+                    if (context.Properties.Parameters.TryGetValue("max_age", out object max_age))
+                    {
+                        context.ProtocolMessage.Parameters.Add("max_age", max_age.ToString());
+                    }
+
                     await Task.FromResult(0);
                 },
                 OnRedirectToIdentityProviderForSignOut = async (context) =>
