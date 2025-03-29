@@ -60,11 +60,29 @@ class AuthService {
         });
     }
 
-    async login() {
+    async login(securityLevel, maxAge, isForceAuthn, isPassive) {
         const nonce = this.generateNonce();
+        const extraQueryParams = {
+            nonce: nonce,
+        }
+
+        if (isForceAuthn) {
+            extraQueryParams.prompt = "login";
+        } else if (isPassive) {
+            extraQueryParams.prompt = "none";
+        }
+        
+        if (securityLevel) {
+            extraQueryParams.acr_values = securityLevel;
+        }
+
+        if (maxAge) {
+            extraQueryParams.max_age = maxAge;
+        }
+
         await this.userManager.signinRedirect({
             extraQueryParams: {
-                nonce: nonce
+                ...extraQueryParams
             },
         });
     }
@@ -93,29 +111,6 @@ class AuthService {
         catch (e) {
             console.error("Error logging out", e);
         }
-    }
-
-    async forceAuthn(securityLevel) {
-        const nonce = this.generateNonce();
-        await this.userManager.signinRedirect({
-            extraQueryParams: {
-                nonce: nonce,
-                prompt: "login",
-                acr_values: securityLevel
-            },
-        });
-    }
-
-    async reAuthenticate() {
-        const nonce = this.generateNonce();
-        const id_token = await this.getIdToken();
-        await this.userManager.signinRedirect({
-            extraQueryParams: {
-                nonce: nonce,
-                prompt: "none",
-                id_token_hint: id_token,
-            },
-        });
     }
 
     async getUser() {
