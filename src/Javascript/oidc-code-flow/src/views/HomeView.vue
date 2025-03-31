@@ -3,12 +3,9 @@
     <header>
       <h1>SPA OIDC client application</h1>
       <div>
-        <div v-if="!user">
-          <button @click="login">Login</button>
-        </div>
-        <div v-else>
+        <div>
           <div class="security-level">
-            <label for="auth-level">Select Security Level:</label>
+            <label for="auth-level">Select Security Level</label>
             <select id="auth-level" v-model="selectedSecurityLevel">
               <option value="" selected>None</option>
               <option v-for="option in securityLevels" :key="option" :value="option">
@@ -16,28 +13,25 @@
               </option>
             </select>
           </div>
-
-          <h4>Welcome, {{ user.profile.name }}</h4>
-          <button @click="logout">Logout</button>
-          <button @click="forceAuthn">Force authn</button>
+          <div class="security-level max-age">
+            <label for="auth-level">max_age</label>
+            <input type="number" id="max-age" v-model="maxAge" />
+          </div>
+          <div v-if="!user">
+            <button @click="login(false, false)">Sign in</button>
+          </div>
+          <template v-if="user">
+            <h4>Welcome, {{ user.profile.name }}</h4>
+            <button @click="login(false, false)">Re-Authenticate</button>
+            <button @click="login(true, false)">Force Authentication</button>
+            <button @click="login(false, true)">Passive Authentication</button>
+            <button @click="logout">Sign out</button>
+          </template>
         </div>
       </div>
     </header>
 
     <div v-if="user">
-      <div v-if="accessToken">
-        <h2>Access Token</h2>
-        <p class="token">{{ accessToken }}</p>
-        <div class="decoded" v-if="accessTokenHeader">
-          <h3>Header</h3>
-          <p>{{ accessTokenHeader }}</p>
-        </div>
-        <div class="decoded" v-if="accessTokenPayload">
-          <h3>Payload</h3>
-          <p>{{ accessTokenPayload }}</p>
-        </div>
-      </div>
-
       <div v-if="idToken">
         <h2>ID Token</h2>
         <p class="token">{{ idToken }}</p>
@@ -48,6 +42,19 @@
         <div class="decoded" v-if="idTokenPayload">
           <h3>Payload</h3>
           <p class="token">{{ idTokenPayload }}</p>
+        </div>
+      </div>
+
+      <div v-if="accessToken">
+        <h2>Access Token</h2>
+        <p class="token">{{ accessToken }}</p>
+        <div class="decoded" v-if="accessTokenHeader">
+          <h3>Header</h3>
+          <p>{{ accessTokenHeader }}</p>
+        </div>
+        <div class="decoded" v-if="accessTokenPayload">
+          <h3>Payload</h3>
+          <p>{{ accessTokenPayload }}</p>
         </div>
       </div>
     </div>
@@ -70,6 +77,7 @@ const accessTokenPayload = ref(null);
 const idTokenHeader = ref(null);
 const idTokenPayload = ref(null);
 const selectedSecurityLevel = ref('');
+const maxAge = ref(null);
 const route = useRoute();
 
 const error = computed(() => route.query.error || '');
@@ -85,9 +93,9 @@ const securityLevels = [
   "urn:dk:gov:saml:attribute:AssuranceLevel:4"
 ];
 
-const login = async () => {
+const login = async (isForceAuthn, isPassive) => {
   try {
-    await authService.login();
+    await authService.login(selectedSecurityLevel.value, maxAge.value, isForceAuthn, isPassive);
     user.value = await authService.getUser();
     accessToken.value = await authService.getAccessToken();
     idToken.value = await authService.getIdToken();
@@ -117,14 +125,6 @@ const logout = async () => {
     selectedSecurityLevel.value = '';
   } catch (error) {
     console.error("Logout failed:", error);
-  }
-};
-
-const forceAuthn = async () => {
-  try {
-    await authService.forceAuthn(selectedSecurityLevel.value);
-  } catch (error) {
-    console.error("forceAuthn failed:", error);
   }
 };
 
@@ -164,10 +164,11 @@ header h1 {
   font-size: 2rem;
 }
 
-select {
+select, input {
   padding: 10px;
   border-radius: 4px;
   border: 1px solid #ccc;
+  width: 400px;
 }
 
 button {
@@ -248,5 +249,10 @@ h2 {
   gap: 20px;
   font-size: 1rem;
   margin: 20px 0;
+}
+
+.security-level label {
+  width: 170px;
+  text-align: left;
 }
 </style>
