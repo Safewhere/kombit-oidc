@@ -44,6 +44,7 @@ namespace WebAppNetCore
             connectOptions.UseTokenLifetime = true;
             connectOptions.SaveTokens = true;
             connectOptions.ClaimsIssuer = configuration.ClaimsIssuer();
+            connectOptions.Authority = configuration.ClaimsIssuer();
             connectOptions.GetClaimsFromUserInfoEndpoint = true;
             connectOptions.UsePkce = configuration.UsePKCE();
 
@@ -59,15 +60,6 @@ namespace WebAppNetCore
 
             connectOptions.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
 
-            connectOptions.Configuration = new OpenIdConnectConfiguration()
-            {
-                AuthorizationEndpoint = configuration.AuthorizationEndpoint(),
-                TokenEndpoint = configuration.TokenEndpoint(),
-                UserInfoEndpoint = configuration.UserInfoEndpoint(),
-                EndSessionEndpoint = configuration.EndSessionEndpoint(),
-                
-                HttpLogoutSupported = true
-            };
             connectOptions.Events = new OpenIdConnectEvents
             {
                 OnRedirectToIdentityProvider = async (context) =>
@@ -166,11 +158,6 @@ namespace WebAppNetCore
                 connectOptions.Scope.Add(scope);
             }
 
-            var signingKey = configuration.IssuerSigningKey();
-            connectOptions.TokenValidationParameters.IssuerSigningKeys = new List<SecurityKey> {
-                new RsaSecurityKey(signingKey.GetRSAPublicKey().ExportParameters(false)),
-                new X509SecurityKey(signingKey)
-            };
             connectOptions.TokenValidationParameters.ValidateAudience = true;   // by default, when we don't explicitly set ValidAudience, it is set to ClientId
             connectOptions.TokenValidationParameters.ValidateIssuer = true;
             connectOptions.TokenValidationParameters.ValidIssuer = configuration.ClaimsIssuer();

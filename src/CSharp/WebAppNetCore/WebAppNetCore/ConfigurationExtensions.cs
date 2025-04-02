@@ -11,26 +11,32 @@ namespace WebAppNetCore
         {
             return configuration["OpenIdConnectOptions:Scope"];
         }
+
         public static string ClientId(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:ClientId"];
         }
+
         public static string ClientSecret(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:ClientSecret"];
         }
+
         public static string ResponseType(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:ResponseType"];
         }
+
         public static string ResponseMode(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:ResponseMode"];
         }
+
         public static string ClaimsIssuer(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:ClaimsIssuer"].TrimEnd('/');
         }
+
         public static string IssuerDomain(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:IssuerDomain"].TrimEnd('/');
@@ -54,11 +60,6 @@ namespace WebAppNetCore
         public static string EndSessionEndpoint(this IConfiguration configuration)
         {
             return configuration.IssuerDomain() + "/runtime/openidconnect/logout.idp";
-        }
-
-        public static X509Certificate2 IssuerSigningKey(this IConfiguration configuration)
-        {
-            return new X509Certificate2(Convert.FromBase64String(configuration["OpenIdConnectOptions:TokenValidationParameters:IssuerSigningKey"]));
         }
 
         public static Uri EditMyProfileUri(this IConfiguration configuration)
