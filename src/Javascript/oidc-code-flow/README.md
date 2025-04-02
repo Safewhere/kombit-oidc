@@ -35,6 +35,10 @@ For production, you need to build the SPA and deploy the output in the `dist` fo
     This will generate the production build files in the dist folder.
 4. Deploy the contents of the dist folder to your web server or hosting service.
 
+Note: For production deployment, ensure that your server is configured correctly to support Vue Router in history mode. Follow the official guide for proper setup: [**Vue Router - History Mode Server Configurations**](https://router.vuejs.org/guide/essentials/history-mode#Example-Server-Configurations).
+
+Example: For IIS, refer to: [**Vue Router - IIS Configuration**](https://router.vuejs.org/guide/essentials/history-mode#Internet-Information-Services-IIS).
+
 #### Local development  
 
 If you're running the SPA in a Node.js development environment, you can use the built-in self-hosting.  
