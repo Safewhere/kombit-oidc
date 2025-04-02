@@ -2,7 +2,7 @@
 @using System.Security.Principal
 
 @{
-    var availableLoas = new List<string> { 
+    var availableLoas = new List<string> {
       "",
       "https://data.gov.dk/concept/core/nsis/loa/High",
       "https://data.gov.dk/concept/core/nsis/loa/Low",
@@ -19,7 +19,7 @@
 {
     <div class="alert alert-success" role="alert"> Hello, @User.Identity.Name!</div>
     <div class="alert alert-info" role="alert">
-        <label for="Loa">Assuarance Level</label>
+        <label for="Loa">Assurance Level</label>
         <div class="input-group">
             <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
         </div>
@@ -30,23 +30,24 @@
         </div>
         <br />
         <div class="input-group">
-            <a href="javascript:login(false, false);" class="btn btn-primary">Re-Authenticate</a>
+            <a href="javascript:login(false, false);" class="btn btn-primary">Re-authenticate</a>
             <a href="javascript:login(true, false);" class="btn btn-primary">Force Authentication</a>
             <a href="javascript:login(false, true);" class="btn btn-primary">Passive Authentication</a>
         </div>
     </div>
     <div class="alert alert-info" role="alert">
-        <a asp-area="" asp-controller="Account" asp-action="SignOut" class="btn btn-primary">Sign out</a>
-        @if (ViewData["EnablePostLogout"] == "Yes")
-        {
-            <br />
-            <form action="@ViewData["EndSessionUri"]" enctype="application/x-www-form-urlencoded" method="post" style="padding-top:10px">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="id_token_hint" value="@ViewData["IdTokenHint"]" />
-                <input type="hidden" name="post_logout_redirect_uri" value="@ViewData["RedirectUrl"]" />
-                <input name="Authorize" type="submit" value="Post logout" class="btn btn-primary" />
-            </form>
-        }
+        <div class="input-group" style="display:flex;">
+            <a asp-area="" asp-controller="Account" asp-action="SignOut" class="btn btn-primary">Sign out</a>
+            @if (ViewData["EnablePostLogout"] == "Yes")
+            {
+                <form action="@ViewData["EndSessionUri"]" enctype="application/x-www-form-urlencoded" method="post" style="padding-left:5px">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="id_token_hint" value="@ViewData["IdTokenHint"]" />
+                    <input type="hidden" name="post_logout_redirect_uri" value="@ViewData["RedirectUrl"]" />
+                    <input name="Authorize" type="submit" value="Post logout" class="btn btn-primary" />
+                </form>
+            }
+        </div>
     </div>
 
 
@@ -58,19 +59,21 @@
 }
 else
 {
-    <label for="Loa">Assuarance Level</label>
-    <div class="input-group">
-        <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
-    </div>
-    <br />
-    <label for="Loa">max_age</label>
-    <div class="input-group">
-        <input id="max_age" type="number" style="width:350px;max-width:350px;" />
-    </div>
+    <div class="alert alert-info">
+        <label for="Loa">Assurance Level</label>
+        <div class="input-group">
+            <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
+        </div>
+        <br />
+        <label for="Loa">max_age</label>
+        <div class="input-group">
+            <input id="max_age" type="number" style="width:350px;max-width:350px;" />
+        </div>
 
-    <br />
-    <div class="input-group">
-        <a href="javascript:login(false, false);" class="btn btn-primary">Sign in</a>
+        <br />
+        <div class="input-group">
+            <a href="javascript:login(false, false);" class="btn btn-primary">Sign in</a>
+        </div>
     </div>
 }
 
