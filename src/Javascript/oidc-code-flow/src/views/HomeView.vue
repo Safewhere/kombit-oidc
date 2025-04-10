@@ -17,6 +17,13 @@
             <label for="auth-level">max_age</label>
             <input type="number" id="max-age" v-model="maxAge" />
           </div>
+          <div class="security-level">
+            <label for="auth-method">Authn Request Method</label>
+            <select id="auth-method" v-model="selectedAuthnMethod">
+              <option value="GET" selected>GET</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
           <div v-if="!user">
             <button @click="login(false, false)">Sign in</button>
           </div>
@@ -77,6 +84,7 @@ const accessTokenPayload = ref(null);
 const idTokenHeader = ref(null);
 const idTokenPayload = ref(null);
 const selectedSecurityLevel = ref('');
+const selectedAuthnMethod = ref('GET');
 const maxAge = ref(null);
 const route = useRoute();
 
@@ -95,7 +103,7 @@ const securityLevels = [
 
 const login = async (isForceAuthn, isPassive) => {
   try {
-    await authService.login(selectedSecurityLevel.value, maxAge.value, isForceAuthn, isPassive);
+    await authService.login(selectedSecurityLevel.value, maxAge.value, isForceAuthn, isPassive, selectedAuthnMethod.value == 'POST');
     user.value = await authService.getUser();
     accessToken.value = await authService.getAccessToken();
     idToken.value = await authService.getIdToken();

@@ -30,7 +30,7 @@ For production, you need to build the SPA and deploy the output in the `dist` fo
 2. Navigate to the `oidc-code-flow` folder.  
 3. Run the following command to build the application:
     ```bash
-    npm run build
+    npm run build-only
     ```
     This will generate the production build files in the dist folder.
 4. Deploy the contents of the dist folder to your web server or hosting service.
