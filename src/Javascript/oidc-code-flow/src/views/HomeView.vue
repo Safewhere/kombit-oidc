@@ -24,48 +24,55 @@
               <option value="POST">POST</option>
             </select>
           </div>
-          <div v-if="!user">
-            <button @click="login(false, false)">Sign in</button>
+          <div v-if="!error">
+            <div v-if="!user">
+              <button @click="login(false, false)">Sign in</button>
+            </div>
+            <template v-if="user">
+              <h4>Welcome, {{ user.profile.name }}</h4>
+              <button @click="login(false, false)">Re-Authenticate</button>
+              <button @click="login(true, false)">Force Authentication</button>
+              <button @click="login(false, true)">Passive Authentication</button>
+              <button @click="logout">Sign out</button>
+            </template>
           </div>
-          <template v-if="user">
-            <h4>Welcome, {{ user.profile.name }}</h4>
-            <button @click="login(false, false)">Re-Authenticate</button>
-            <button @click="login(true, false)">Force Authentication</button>
-            <button @click="login(false, true)">Passive Authentication</button>
-            <button @click="logout">Sign out</button>
-          </template>
+          <div v-if="error">
+            <div>
+              <button @click="login(false, false)">Sign in</button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
+    <div v-if="!error">
+      <div v-if="user">
+        <div v-if="idToken">
+          <h2>ID Token</h2>
+          <p class="token">{{ idToken }}</p>
+          <div class="decoded" v-if="idTokenHeader">
+            <h3>Header</h3>
+            <p class="token">{{ idTokenHeader }}</p>
+          </div>
+          <div class="decoded" v-if="idTokenPayload">
+            <h3>Payload</h3>
+            <p class="token">{{ idTokenPayload }}</p>
+          </div>
+        </div>
 
-    <div v-if="user">
-      <div v-if="idToken">
-        <h2>ID Token</h2>
-        <p class="token">{{ idToken }}</p>
-        <div class="decoded" v-if="idTokenHeader">
-          <h3>Header</h3>
-          <p class="token">{{ idTokenHeader }}</p>
-        </div>
-        <div class="decoded" v-if="idTokenPayload">
-          <h3>Payload</h3>
-          <p class="token">{{ idTokenPayload }}</p>
-        </div>
-      </div>
-
-      <div v-if="accessToken">
-        <h2>Access Token</h2>
-        <p class="token">{{ accessToken }}</p>
-        <div class="decoded" v-if="accessTokenHeader">
-          <h3>Header</h3>
-          <p>{{ accessTokenHeader }}</p>
-        </div>
-        <div class="decoded" v-if="accessTokenPayload">
-          <h3>Payload</h3>
-          <p>{{ accessTokenPayload }}</p>
+        <div v-if="accessToken">
+          <h2>Access Token</h2>
+          <p class="token">{{ accessToken }}</p>
+          <div class="decoded" v-if="accessTokenHeader">
+            <h3>Header</h3>
+            <p>{{ accessTokenHeader }}</p>
+          </div>
+          <div class="decoded" v-if="accessTokenPayload">
+            <h3>Payload</h3>
+            <p>{{ accessTokenPayload }}</p>
+          </div>
         </div>
       </div>
     </div>
-
     <ErrorView v-if="error" :error="error" :description="description" />
   </div>
 </template>
