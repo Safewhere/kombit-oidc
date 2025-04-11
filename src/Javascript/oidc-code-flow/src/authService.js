@@ -1,4 +1,4 @@
-import Oidc, { UserManager } from 'oidc-client';
+import Oidc, { UserManager, SessionMonitor } from 'oidc-client';
 
 const settings = {
     authority: import.meta.env.VITE_OAUTH_AUTHORITY,
@@ -7,11 +7,14 @@ const settings = {
     post_logout_redirect_uri: `${window.location.origin}`,
     response_type: "code",
     scope: import.meta.env.VITE_OAUTH_SCOPE || "openid",
-    monitorSession: true,
+    monitorSession: false, // Disable session monitoring, the built-in session monitor is not used because it does note support forceAuthn correctly. We manually construct it in handleCallback to have a new session-state for each login.
     automaticSilentRenew: true,
-    userStore: new Oidc.WebStorageStateStore({
+    stateStore: new Oidc.WebStorageStateStore({
         store: window.sessionStorage,
     }),
+    extraQueryParams: {
+        nonce: "default-nonce",
+    },
 };
     
 class CustomUserManager extends UserManager {
@@ -147,6 +150,9 @@ class AuthService {
     async handleCallback() {
         try {
             const user = await this.userManager.signinRedirectCallback();
+            // rebuild the session monitor with the new session state to avoid automatic logout.
+            console.log("User signed in successfully: ", user.profile.sub + '|' + user.session_state);
+            this.userManager._sessionMonitor = new SessionMonitor(this.userManager);
             return user;
         }
         catch (e) {
