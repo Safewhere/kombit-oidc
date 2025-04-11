@@ -45,6 +45,50 @@ class CustomUserManager extends UserManager {
             console.log("UserManager.signinRedirect: successful");
         });
     }
+
+    signinPost(args = {}) {
+        args = Object.assign({}, args);
+
+        args.request_type = "si:p";
+        let navParams = {
+            useReplaceToNavigate: args.useReplaceToNavigate
+        };
+
+        return this._signinStartPost(args, this._redirectNavigator, navParams).then(() => {
+            console.log("UserManager.signinPost: successful");
+        });
+    }
+
+    _signinStartPost(args, navigator, navigatorParams = {}) {
+        return navigator.prepare(navigatorParams).then(handle => {
+            return this.createSigninRequest(args).then(signinRequest => {
+                let url = new URL(signinRequest.url);
+                url.searchParams.delete("response_mode");
+
+                const form = document.createElement("form");
+                form.method = "POST";
+                form.action = url.origin + url.pathname;
+
+                url.searchParams.forEach((value, key) => {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = key;
+                    input.value = value;
+                    form.appendChild(input);
+                });
+
+                document.body.appendChild(form);
+                form.submit();
+
+                return Promise.resolve(); // Since navigation happens via form submission
+            }).catch(err => {
+                if (handle.close) {
+                    handle.close();
+                }
+                throw err;
+            });
+        });
+    }
 }
 
 class AuthService {
@@ -60,7 +104,7 @@ class AuthService {
         });
     }
 
-    async login(securityLevel, maxAge, isForceAuthn, isPassive) {
+    async login(securityLevel, maxAge, isForceAuthn, isPassive, isPost) {
         const nonce = this.generateNonce();
         const extraQueryParams = {
             nonce: nonce,
@@ -80,11 +124,20 @@ class AuthService {
             extraQueryParams.max_age = maxAge;
         }
 
-        await this.userManager.signinRedirect({
-            extraQueryParams: {
-                ...extraQueryParams
-            },
-        });
+        if (isPost) {
+            await this.userManager.signinPost({
+                extraQueryParams: {
+                    ...extraQueryParams
+                },
+            });
+        }
+        else {
+            await this.userManager.signinRedirect({
+                extraQueryParams: {
+                    ...extraQueryParams
+                },
+            });
+        }
     }
 
     generateNonce() {
