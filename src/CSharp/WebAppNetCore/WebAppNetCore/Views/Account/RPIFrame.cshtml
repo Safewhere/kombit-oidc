@@ -41,7 +41,7 @@
             }
 
             if (params.error) {
-                errorAction = params.error === 'login_required' ? 'relogin' : 'logout';
+                errorAction = params.error !== 'login_required' ? 'relogin' : 'logout';
                 return;
             }
             var idtoken = params.id_token;            

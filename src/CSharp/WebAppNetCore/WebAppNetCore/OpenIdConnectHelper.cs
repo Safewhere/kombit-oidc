@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web;
 using Microsoft.AspNetCore.Http;
@@ -16,23 +17,78 @@ namespace WebAppNetCore
             string state = RandomDataBase64url(32);
             string nonce = Guid.NewGuid().ToString("N");
 
-            var idToken = HttpContext.User.Claims.Where(x => x.Type == OpenIdConnectConstants.IdToken).Select(x => x.Value).FirstOrDefault();
+            string authorizationRequest = string.Empty;
 
-            string authorizationRequest = string.Format("{0}?response_type=id_token&scope={4}&redirect_uri={1}&client_id={2}" +
+            if (configuration.UsePKCE())
+            {
+                authorizationRequest = string.Format("{0}?response_type=id_token code&scope={4}&redirect_uri={1}&client_id={2}" +
                                                         "&state={3}&prompt=none" +
-                                                        "&nonce={5}"+
+                                                        "&nonce={5}",
+                    configuration.AuthorizationEndpoint(),
+                    HttpContext.Request.Scheme + "://" + HttpContext.Request.Host + "/Account/ReauthenticationCallBack",
+                    HttpUtility.UrlEncode(configuration.ClientId()),
+                    state,
+                    HttpUtility.UrlEncode(configuration.Scope()),
+                    nonce);
+                authorizationRequest += "&code_challenge_method=S256";
+                string codeVerifier = GenerateCodeVerifier();
+                string codeChallenge = GenerateCodeChallenge(codeVerifier);
+                authorizationRequest += "&code_challenge=" + codeChallenge;
+            }
+            else
+            {
+                var idToken = HttpContext.User.Claims.Where(x => x.Type == OpenIdConnectConstants.IdToken).Select(x => x.Value).FirstOrDefault();
+                authorizationRequest = string.Format("{0}?response_type=id_token&scope={4}&redirect_uri={1}&client_id={2}" +
+                                                        "&state={3}&prompt=none" +
+                                                        "&nonce={5}" +
                                                         "&id_token_hint={6}",
-                configuration.AuthorizationEndpoint(),
-                HttpContext.Request.Scheme + "://" + HttpContext.Request.Host + "/Account/ReauthenticationCallBack",
-                HttpUtility.UrlEncode(configuration.ClientId()),
-                state,
-                HttpUtility.UrlEncode(configuration.Scope()),
-                nonce,
-                idToken);
+                    configuration.AuthorizationEndpoint(),
+                    HttpContext.Request.Scheme + "://" + HttpContext.Request.Host + "/Account/ReauthenticationCallBack",
+                    HttpUtility.UrlEncode(configuration.ClientId()),
+                    state,
+                    HttpUtility.UrlEncode(configuration.Scope()),
+                    nonce,
+                    idToken);
+            }
+
             return authorizationRequest;
         }
 
         #region Helpers
+        private static string GenerateCodeVerifier()
+        {
+            int length = 43;
+            using (var rng = new RNGCryptoServiceProvider())
+            {
+                var randomBytes = new byte[length];
+                rng.GetBytes(randomBytes);
+
+                // Convert to a Base64 URL-safe string
+                string base64UrlString = Base64UrlEncode(randomBytes);
+
+                // Trim or extend the string to the desired length
+                return base64UrlString.Substring(0, Math.Min(base64UrlString.Length, length));
+            }
+        }
+
+        private static string GenerateCodeChallenge(string codeVerifier)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hashBytes = sha256.ComputeHash(Encoding.ASCII.GetBytes(codeVerifier));
+
+                return Base64UrlEncode(hashBytes);
+            }
+        }
+
+        private static string Base64UrlEncode(byte[] input)
+        {
+            return Convert.ToBase64String(input)
+                .TrimEnd('=')   // Remove padding
+                .Replace('+', '-') // Replace '+' with '-'
+                .Replace('/', '_'); // Replace '/' with '_'
+        }
+
         private static string RandomDataBase64url(uint length)
         {
             RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider();
