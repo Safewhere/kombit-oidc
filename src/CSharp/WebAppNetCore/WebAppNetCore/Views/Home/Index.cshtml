@@ -1,5 +1,6 @@
 ﻿@using System.IdentityModel.Tokens.Jwt
 @using System.Text.Json
+@using System.Text.Encodings.Web
 @{
     ViewData["Title"] = "Home Page";
 }
@@ -19,21 +20,25 @@
 
         accessTokenHeader = JsonSerializer.Serialize(jsonToken.Header, new System.Text.Json.JsonSerializerOptions
                 {
-                    WriteIndented = true
+                    WriteIndented = true,
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 });
         accessTokenPayload = JsonSerializer.Serialize(jsonToken.Payload, new System.Text.Json.JsonSerializerOptions
                 {
-                    WriteIndented = true
+                    WriteIndented = true,
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 });
 
         var idJsonToken = handler.ReadToken((string)idToken) as JwtSecurityToken;
         idTokenHeader = JsonSerializer.Serialize(idJsonToken.Header, new System.Text.Json.JsonSerializerOptions
                 {
-                    WriteIndented = true
+                    WriteIndented = true,
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 });
         idTokenPayload = JsonSerializer.Serialize(idJsonToken.Payload, new System.Text.Json.JsonSerializerOptions
                 {
-                    WriteIndented = true
+                    WriteIndented = true,
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 });
     }
 }
