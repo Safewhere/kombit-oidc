@@ -11,6 +11,10 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.IdentityModel.Logging;
+using System.Net.Http.Headers;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text;
 
 namespace WebAppNetCore
 {
@@ -30,6 +34,16 @@ namespace WebAppNetCore
             .AddOpenIdConnect(connectOptions => InitializeConnectOptions(connectOptions, configuration));
 
             return services;
+        }
+
+        private static string Encode(string? data)
+        {
+            if (string.IsNullOrEmpty(data))
+            {
+                return string.Empty;
+            }
+            // Escape spaces as '+'.
+            return Uri.EscapeDataString(data).Replace("%20", "+");
         }
 
         private static void InitializeConnectOptions(OpenIdConnectOptions connectOptions, IConfiguration configuration)
@@ -90,6 +104,54 @@ namespace WebAppNetCore
                 {
                     Console.WriteLine("OnAuthorizationCodeReceived.");
                     Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
+                    var tokenEndpoint = configuration.TokenEndpoint();
+
+                    using var httpClient = new HttpClient();
+
+                    var parameters = new Dictionary<string, string>
+                    {
+                        { "grant_type", "authorization_code" },
+                        { "code", context.ProtocolMessage.Code },
+                        { "redirect_uri", context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey] },
+                        { "session_state", context.ProtocolMessage.SessionState}
+                    };
+
+                    if(configuration.UsePKCE())
+                    {
+                        parameters["code_verifier"] = context.TokenEndpointRequest.Parameters["code_verifier"];
+                    }
+
+                    var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
+
+                    if (configuration.TokenAuthnMethod() == "client_secret_post")
+                    {
+                        parameters["client_id"] = configuration.ClientId();
+                        parameters["client_secret"] = configuration.ClientSecret();
+                        request.Content = new FormUrlEncodedContent(parameters);
+                    }
+                    else if (configuration.TokenAuthnMethod() == "client_secret_basic")
+                    {
+                        var creds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Encode(configuration.ClientId())}:{Encode(configuration.ClientSecret())}"));
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", creds);
+                        request.Content = new FormUrlEncodedContent(parameters);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported TokenAuthnMethod: {configuration.TokenAuthnMethod()}");
+                    }
+
+                    var response = await httpClient.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var tokenResponse = JsonDocument.Parse(responseContent).RootElement;
+
+                    var idToken = tokenResponse.GetProperty("id_token").GetString();
+                    var accessToken = tokenResponse.GetProperty("access_token").GetString();
+
+                    context.HandleCodeRedemption(accessToken, idToken);
+
+
                     await Task.FromResult(0);
                 },
                 OnTokenResponseReceived = async (context) =>

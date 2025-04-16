@@ -194,12 +194,22 @@ class AuthService {
 
     async decodeToken(token) {
         try {
-            const header = JSON.parse(window.atob(token.split(".")[0]));
-            const payload =  JSON.parse(window.atob(token.split(".")[1]));
-
+            const [headerB64, payloadB64] = token.split(".");
+    
+            const decodeBase64 = (b64) => {
+                const binary = atob(b64);
+                // Decode UTF-8 safely
+                const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+                return new TextDecoder("utf-8").decode(bytes);
+            };
+    
+            const header = JSON.parse(decodeBase64(headerB64));
+            const payload = JSON.parse(decodeBase64(payloadB64));
+    
             return { header, payload };
         } catch (e) {
-            console.warn("Error decoding token");
+            console.warn("Error decoding token:", e);
+            return null;
         }
     }
 }

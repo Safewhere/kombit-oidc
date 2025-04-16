@@ -110,5 +110,16 @@ namespace WebAppNetCore
         {
             return configuration["OpenIdConnectOptions:AuthorizationEndpointMethod"] == "POST"? OpenIdConnectRedirectBehavior.FormPost : OpenIdConnectRedirectBehavior.RedirectGet;
         }
+
+        public static string TokenAuthnMethod(this IConfiguration configuration)
+        {
+            var method = configuration["OpenIdConnectOptions:TokenAuthnMethod"];
+            if (string.IsNullOrEmpty(method))
+            {
+                return "client_secret_post";
+            }
+
+            return method;
+        }
     }
 }
