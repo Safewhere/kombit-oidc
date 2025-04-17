@@ -17,11 +17,7 @@ namespace WebAppNetCore
             string state = RandomDataBase64url(32);
             string nonce = Guid.NewGuid().ToString("N");
 
-            string authorizationRequest = string.Empty;
-
-            if (configuration.UsePKCE())
-            {
-                authorizationRequest = string.Format("{0}?response_type=id_token code&scope={4}&redirect_uri={1}&client_id={2}" +
+            string authorizationRequest = string.Format("{0}?response_type=code&scope={4}&redirect_uri={1}&client_id={2}" +
                                                         "&state={3}&prompt=none" +
                                                         "&nonce={5}",
                     configuration.AuthorizationEndpoint(),
@@ -30,26 +26,10 @@ namespace WebAppNetCore
                     state,
                     HttpUtility.UrlEncode(configuration.Scope()),
                     nonce);
-                authorizationRequest += "&code_challenge_method=S256";
-                string codeVerifier = GenerateCodeVerifier();
-                string codeChallenge = GenerateCodeChallenge(codeVerifier);
-                authorizationRequest += "&code_challenge=" + codeChallenge;
-            }
-            else
-            {
-                var idToken = HttpContext.User.Claims.Where(x => x.Type == OpenIdConnectConstants.IdToken).Select(x => x.Value).FirstOrDefault();
-                authorizationRequest = string.Format("{0}?response_type=id_token&scope={4}&redirect_uri={1}&client_id={2}" +
-                                                        "&state={3}&prompt=none" +
-                                                        "&nonce={5}" +
-                                                        "&id_token_hint={6}",
-                    configuration.AuthorizationEndpoint(),
-                    HttpContext.Request.Scheme + "://" + HttpContext.Request.Host + "/Account/ReauthenticationCallBack",
-                    HttpUtility.UrlEncode(configuration.ClientId()),
-                    state,
-                    HttpUtility.UrlEncode(configuration.Scope()),
-                    nonce,
-                    idToken);
-            }
+            authorizationRequest += "&code_challenge_method=S256";
+            string codeVerifier = GenerateCodeVerifier();
+            string codeChallenge = GenerateCodeChallenge(codeVerifier);
+            authorizationRequest += "&code_challenge=" + codeChallenge;
 
             return authorizationRequest;
         }

@@ -36,10 +36,15 @@
                 queryString = location.hash.substring(1),
                 regex = /([^&=]+)=([^&]*)/g,
                 m;
+            if(!queryString)
+            {
+                queryString = location.search.substring(1);
+            }
+
             while (m = regex.exec(queryString)) {
                 params[decodeURIComponent(m[1])] = decodeURIComponent(m[2]);
             }
-
+     
             if (params.error) {
                 errorAction = params.error !== 'login_required' ? 'relogin' : 'logout';
                 return;
@@ -57,6 +62,7 @@
 
         function setTimer() {
             if (errorAction !== '') {
+                window.parent.document.getElementById('notice').innerHTML = errorAction;
                 window.parent.location = errorAction === 'relogin' ? "@Url.Action("SignIn", "Account")" : "@Url.Action("SignedOutCallback", "Account")";
                 return;
             } 

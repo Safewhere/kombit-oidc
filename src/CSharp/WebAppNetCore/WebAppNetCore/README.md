@@ -39,10 +39,6 @@ For both GET and POST logout request, the /Account/SignedOutCallback endpoint sh
 
 - Edit "appsettings.json", change setting TokenAuthnMethod to "client_secret_post" or "client_secret_basic"
 
-## Turn on/off for Use PKCE
-
-- Edit "appsettings.json", change setting UsePKCE to "true" or "false"
-
 # Notes
 
 Note that this example is not a production ready code. It is only for demonstration purpose. It is developed for KOMBIT testing so its features include some built-in supports:

@@ -2,14 +2,11 @@
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Threading.Tasks;
 using System.Security.Claims;
 using System.Linq;
 using System.Collections.Generic;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.IdentityModel.Logging;
 using System.Net.Http.Headers;
 using System.Net.Http;
@@ -60,7 +57,7 @@ namespace WebAppNetCore
             connectOptions.ClaimsIssuer = configuration.ClaimsIssuer();
             connectOptions.Authority = configuration.ClaimsIssuer();
             connectOptions.GetClaimsFromUserInfoEndpoint = true;
-            connectOptions.UsePkce = configuration.UsePKCE();
+            connectOptions.UsePkce = true;
 
             var responseMode = configuration.ResponseMode();
             if(string.IsNullOrEmpty(responseMode))
@@ -113,13 +110,9 @@ namespace WebAppNetCore
                         { "grant_type", "authorization_code" },
                         { "code", context.ProtocolMessage.Code },
                         { "redirect_uri", context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey] },
-                        { "session_state", context.ProtocolMessage.SessionState}
+                        { "session_state", context.ProtocolMessage.SessionState},
+                        { "code_verifier", context.TokenEndpointRequest.Parameters["code_verifier"] }
                     };
-
-                    if(configuration.UsePKCE())
-                    {
-                        parameters["code_verifier"] = context.TokenEndpointRequest.Parameters["code_verifier"];
-                    }
 
                     var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
 
@@ -148,9 +141,10 @@ namespace WebAppNetCore
 
                     var idToken = tokenResponse.GetProperty("id_token").GetString();
                     var accessToken = tokenResponse.GetProperty("access_token").GetString();
+                    var sessionState = tokenResponse.GetProperty("session_state").GetString();
 
                     context.HandleCodeRedemption(accessToken, idToken);
-
+                    context.TokenEndpointResponse.SessionState = sessionState;
 
                     await Task.FromResult(0);
                 },
