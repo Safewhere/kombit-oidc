@@ -8,7 +8,11 @@
             <label for="auth-level">Select Security Level</label>
             <select id="auth-level" v-model="selectedSecurityLevel">
               <option value="" selected>None</option>
-              <option v-for="option in securityLevels" :key="option" :value="option">
+              <option
+                v-for="option in securityLevels"
+                :key="option"
+                :value="option"
+              >
                 {{ option }}
               </option>
             </select>
@@ -32,7 +36,9 @@
               <h4>Welcome, {{ user.profile.name }}</h4>
               <button @click="login(false, false)">Re-Authenticate</button>
               <button @click="login(true, false)">Force Authentication</button>
-              <button @click="login(false, true)">Passive Authentication</button>
+              <button @click="login(false, true)">
+                Passive Authentication
+              </button>
               <button @click="logout">Sign out</button>
             </template>
           </div>
@@ -78,11 +84,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
-import { authService } from './../authService';
-import ErrorView from './ErrorView.vue';
+import { ref, computed, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
+import { authService } from "./../authService";
+import { isAuthReady } from "./../useAuthState";
 
+import ErrorView from "./ErrorView.vue";
+import { AUTH_FORM_SETTINGS } from '../constants'; 
+import { sessionStore } from '../storageHelper';
+
+// Auth state
 const user = ref(null);
 const accessToken = ref(null);
 const idToken = ref(null);
@@ -90,13 +101,16 @@ const accessTokenHeader = ref(null);
 const accessTokenPayload = ref(null);
 const idTokenHeader = ref(null);
 const idTokenPayload = ref(null);
-const selectedSecurityLevel = ref('');
-const selectedAuthnMethod = ref('GET');
-const maxAge = ref(null);
-const route = useRoute();
 
-const error = computed(() => route.query.error || '');
-const description = computed(() => route.query.description || '');
+// Form settings
+const selectedSecurityLevel = ref("");
+const selectedAuthnMethod = ref("GET");
+const maxAge = ref(null);
+
+// Error handling
+const route = useRoute();
+const error = computed(() => route.query.error || "");
+const description = computed(() => route.query.description || "");
 
 const securityLevels = [
   "https://data.gov.dk/concept/core/nsis/loa/High",
@@ -105,12 +119,19 @@ const securityLevels = [
   "urn:dk:gov:saml:attribute:AssuranceLevel:1",
   "urn:dk:gov:saml:attribute:AssuranceLevel:2",
   "urn:dk:gov:saml:attribute:AssuranceLevel:3",
-  "urn:dk:gov:saml:attribute:AssuranceLevel:4"
+  "urn:dk:gov:saml:attribute:AssuranceLevel:4",
 ];
 
 const login = async (isForceAuthn, isPassive) => {
   try {
-    await authService.login(selectedSecurityLevel.value, maxAge.value, isForceAuthn, isPassive, selectedAuthnMethod.value == 'POST');
+    await authService.login(
+      selectedSecurityLevel.value,
+      maxAge.value,
+      isForceAuthn,
+      isPassive,
+      selectedAuthnMethod.value == "POST"
+    );
+    
     user.value = await authService.getUser();
     accessToken.value = await authService.getAccessToken();
     idToken.value = await authService.getIdToken();
@@ -128,6 +149,7 @@ const login = async (isForceAuthn, isPassive) => {
     }
   } catch (error) {
     console.error("Login failed:", error);
+    alert("Login failed. Please check the console for more details.");
   }
 };
 
@@ -137,30 +159,48 @@ const logout = async () => {
     user.value = null;
     accessToken.value = null;
     idToken.value = null;
-    selectedSecurityLevel.value = '';
+    selectedSecurityLevel.value = "";
   } catch (error) {
     console.error("Logout failed:", error);
   }
 };
 
-onMounted(async () => {
+const loadUserTokens = async () => {
   user.value = await authService.getUser();
   if (!user.value) return;
 
   accessToken.value = await authService.getAccessToken();
   idToken.value = await authService.getIdToken();
 
-  var decodedAccessToken = await authService.decodeToken(accessToken.value);
+  const decodedAccessToken = await authService.decodeToken(accessToken.value);
   if (decodedAccessToken) {
     accessTokenHeader.value = decodedAccessToken.header;
     accessTokenPayload.value = decodedAccessToken.payload;
   }
 
-  var decodedIdToken = await authService.decodeToken(idToken.value);
+  const decodedIdToken = await authService.decodeToken(idToken.value);
   if (decodedIdToken) {
     idTokenHeader.value = decodedIdToken.header;
     idTokenPayload.value = decodedIdToken.payload;
   }
+
+  isAuthReady.value = false;
+};
+
+onMounted(async () => {
+  const savedSettings = sessionStore.get(AUTH_FORM_SETTINGS);
+  if (savedSettings) {
+    selectedSecurityLevel.value = savedSettings.selectedSecurityLevel || "";
+    selectedAuthnMethod.value = savedSettings.isAuthnMethodPost ? "POST" : "GET";
+    maxAge.value = savedSettings.maxAge;
+  }
+
+  await loadUserTokens();
+});
+
+watch(isAuthReady, async (newVal) => {
+  if (!newVal) return;
+  await loadUserTokens();
 });
 </script>
 
@@ -179,7 +219,8 @@ header h1 {
   font-size: 2rem;
 }
 
-select, input {
+select,
+input {
   padding: 10px;
   border-radius: 4px;
   border: 1px solid #ccc;
