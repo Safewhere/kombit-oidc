@@ -25,7 +25,6 @@ namespace WebAppNetCore.Controllers
 
         public IActionResult Index()
         {
-            ViewData["EditMyProfileUri"] = Configuration.EditMyProfileUri();
             ViewData[OpenIdConnectConstants.AccessToken] = HttpContext.GetTokenAsync(OpenIdConnectConstants.AccessToken).Result;
 
             ViewData["Origin"] = $"{Request.Scheme}://{Request.Host.Value}";
