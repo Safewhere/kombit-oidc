@@ -17,7 +17,7 @@ By default, all the necessary configurations for running this application are al
 
 - Support sending an authorization request using POST or GET method
 
-- Support sending a token request using a specified client authentication method like �client_secret_post" or "client_secret_basic".
+- Support sending a token request using a specified client authentication method like "client_secret_post" or "client_secret_basic".
 
 # Configurations
 
