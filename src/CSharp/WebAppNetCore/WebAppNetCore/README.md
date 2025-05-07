@@ -1,16 +1,25 @@
 # Introduction
-This project contains sample code for OAuth2, OpenId Connect using Asp.Net core.
+This project contains sample code for OAuth2, OpenId Connect using Asp.Net core. The application is built for demonstration and testing purposes, particularly within KOMBIT projects.
 
 To run this sample, you will need to install [ASP.NET Core Runtime 8](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-aspnetcore-8.0.15-windows-hosting-bundle-installer).
 
-# How to run the application
-By default, all the necessary configurations for running this application is already setup for single click on visual studio. It is placed on "appsettings.json" and can be download on the corresponding client's implementation tab. 
-With the default settings, this application provides demonstration for following criteria
-- It is using openid connect and code flow
-- It's able to authenticate user and allow user to edit user profile
+By default, all the necessary configurations for running this application are already set up for one-click execution in Visual Studio. These configurations are placed in the "appsettings.json" file . This application supports the following features:
 
-# Advanced settings
-There are some more advanced test cases which can be enabled by simple configurations as following
+- Use the Authorization Code Flow with PKCE for user authentication.
+
+- Support sending an authorization request with a desired assurance level and a specified max_age.
+
+- Support sending an authorization request to re-authenticate user, do passive authentication or force authentication.
+
+- Session management.
+
+- Support sending a logout request using POST or GET method.
+
+- Support sending an authorization request using POST or GET method
+
+- Support sending a token request using a specified client authentication method like �client_secret_post" or "client_secret_basic".
+
+# Configurations
 
 ## Enable openid connect session management
 
@@ -21,7 +30,7 @@ There are some more advanced test cases which can be enabled by simple configura
 - When the EnableSessionManagement is set to "True", the /Account/ReauthenticationCallback endpoint should be added into the OIDCMetadata's redirect_uris.
 
 ## Enable post logout request
-Even though a RP-initiated logout request must be made via GET, Identity version 5.6 is extended to either accept POST logout request to allow flowing large logout payloads. 
+Even though an RP-initiated logout request must be made via GET, the implementation has been extended to also accept POST logout requests to support larger logout payloads. 
 
 ++ Client configuration
 - Edit "appsettings.json", change setting EnablePostLogout to "True". This option will enable button "PostLogout" as following image
@@ -39,10 +48,4 @@ For both GET and POST logout request, the /Account/SignedOutCallback endpoint sh
 
 - Edit "appsettings.json", change setting TokenAuthnMethod to "client_secret_post" or "client_secret_basic"
 
-# Notes
-
-Note that this example is not a production ready code. It is only for demonstration purpose. It is developed for KOMBIT testing so its features include some built-in supports:
-
-- Support for authentication with Assurance Level & max_age
-- Support Re-authentication, Force Authentication and Passive Authentication
 

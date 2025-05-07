@@ -62,11 +62,6 @@ namespace WebAppNetCore
             return configuration.IssuerDomain() + "/runtime/openidconnect/logout.idp";
         }
 
-        public static Uri EditMyProfileUri(this IConfiguration configuration)
-        {
-            return new Uri(configuration["OpenIdConnectOptions:EditMyProfileUri"]);
-        }
-
         public static bool SessionManagementEnabled(this IConfiguration configuration)
         {
             return configuration.CheckSessionIframeUri() != null;
