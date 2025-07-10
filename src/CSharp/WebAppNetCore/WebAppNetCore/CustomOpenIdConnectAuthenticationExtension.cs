@@ -2,6 +2,8 @@
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.IdentityModel.JsonWebTokens;
 using System;
 using System.Threading.Tasks;
 using System.Security.Claims;
@@ -12,6 +14,7 @@ using System.Net.Http.Headers;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text;
+using System.Security.Cryptography.X509Certificates;
 
 namespace WebAppNetCore
 {
@@ -70,6 +73,20 @@ namespace WebAppNetCore
             }
 
             connectOptions.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
+            var scopes = configuration.Scope()
+                .Split(new char[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            connectOptions.Scope.Clear();
+            foreach (var scope in scopes)
+            {
+                connectOptions.Scope.Add(scope);
+            }
+
+            connectOptions.TokenValidationParameters.ValidateAudience = true;   // by default, when we don't explicitly set ValidAudience, it is set to ClientId
+            connectOptions.TokenValidationParameters.ValidateIssuer = true;
+            connectOptions.TokenValidationParameters.ValidIssuer = configuration.ClaimsIssuer();
+            connectOptions.ProtocolValidator.RequireNonce = configuration.RequireNonce();
+            connectOptions.TokenValidationParameters.NameClaimType = ClaimTypes.NameIdentifier;
+            connectOptions.BackchannelHttpHandler = HttpClientHandlerProvider.Create();
 
             connectOptions.Events = new OpenIdConnectEvents
             {
@@ -143,83 +160,66 @@ namespace WebAppNetCore
                     var accessToken = tokenResponse.GetProperty("access_token").GetString();
                     var sessionState = tokenResponse.GetProperty("session_state").GetString();
 
+                    // Read the Id token header to determine if it is encrypted
+                    if (!string.IsNullOrEmpty(idToken))
+                    {
+                        var handler = new JsonWebTokenHandler();
+                        var jwt = handler.ReadJsonWebToken(idToken);
+                        if(OpenIdConnectHelper.IdTokenEncryptedResponseAlgs.Contains(jwt.Alg) ||
+                           OpenIdConnectHelper.IdTokenEncryptedResponseEnc.Contains(jwt.Enc))
+                        {
+                            // Load certificate from store or file (for demo only)
+                            var cert = GetDecryptionCertificate(configuration);
+                            if(cert == null || !cert.HasPrivateKey)
+                            {
+                                throw new InvalidOperationException("Decryption certificate is not configured or does not have a private key.");
+                            }
+                            var encryptionCredentials = new X509EncryptingCredentials(cert, jwt.Alg, jwt.Enc);
+                            idToken = OpenIdConnectHelper.DecryptToken(idToken, encryptionCredentials);
+
+                            context.Options.TokenValidationParameters.TokenDecryptionKey = new X509SecurityKey(cert);
+                            context.Options.TokenValidationParameters.CryptoProviderFactory = new IdentifyCryptoProviderFactory();
+                        }
+                    }
+
                     context.HandleCodeRedemption(accessToken, idToken);
-                    context.TokenEndpointResponse.SessionState = sessionState;
 
                     await Task.FromResult(0);
                 },
                 OnTokenResponseReceived = async (context) =>
                 {
                     Console.WriteLine("OnTokenResponseReceived.");
-                    Console.WriteLine("IdToken = " + context.TokenEndpointResponse.IdToken);
-                    Console.WriteLine("Token = " + context.TokenEndpointResponse.AccessToken);
-                    Console.WriteLine("OnTokenResponseReceived.");
-                    accessToken = context.TokenEndpointResponse.AccessToken;
-                    idToken = context.TokenEndpointResponse.IdToken;
-                    sessionState = context.TokenEndpointResponse.SessionState;
-                    await Task.FromResult(0);
-                },
-                OnRemoteFailure = async (context) =>
-                {
-                    context.HttpContext.Items.Add("RemoteError", context.Failure.ToString());
-                    Console.WriteLine("OnRemoteFailure.");
-                    Console.WriteLine(context.Failure.ToString());
-
-                    await Task.FromResult(0);
-                },
-                OnMessageReceived = async (context) =>
-                {
-                    await Task.FromResult(0);
-                },
-                OnTicketReceived = async (context) =>
-                {
-                    Console.WriteLine("ConTicketReceived");
-                    await Task.FromResult(0);
-                },
-                OnUserInformationReceived = async (context) =>
-                {
                     await Task.FromResult(0);
                 },
                 OnTokenValidated = async (context) =>
                 {
                     Console.WriteLine("OnTokenValidated.");
-                    Console.WriteLine(context.SecurityToken.ToString());
-                    if (accessToken != null)
-                    {
-                        //var token = new JwtSecurityToken(accessToken);
-                        ClaimsIdentity identity = context.Principal.Identity as ClaimsIdentity;
-                        if (identity != null)
-                        {
-                            Claim sessionStateClaim = null;
-                            if (!string.IsNullOrEmpty(sessionState))
-                            {
-                                sessionStateClaim = new Claim(OpenIdConnectConstants.SessionState, sessionState);
-                            }
-                            if (!identity.Claims.Any(c => c.Type == OpenIdConnectConstants.SessionState) && sessionStateClaim != null)
-                            {
-                                identity.AddClaim(sessionStateClaim);
-                            }
-                            identity.AddClaim(new Claim(OpenIdConnectConstants.IdToken, idToken));
-                        }
-                    }
+                    await Task.FromResult(0);
+                },
+                OnUserInformationReceived = async (context) =>
+                {
+                    Console.WriteLine("OnUserInformationReceived.");
+                    await Task.FromResult(0);
+                },
+                OnAuthenticationFailed = async (context) =>
+                {
+                    Console.WriteLine("OnAuthenticationFailed.");
                     await Task.FromResult(0);
                 }
             };
+        }
 
-            var scopes = configuration.Scope()
-                .Split(new char[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            connectOptions.Scope.Clear();
-            foreach (var scope in scopes)
+        private static X509Certificate2? GetDecryptionCertificate(IConfiguration configuration)
+        {
+            // Load certificate from store or file (for demo only)
+            var certPath = ConfigurationExtensions.IdTokenDecryptionCertPath(configuration);
+            var certPassword = ConfigurationExtensions.IdTokenDecryptionCertPassword(configuration);
+            if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(certPassword))
             {
-                connectOptions.Scope.Add(scope);
+                return new X509Certificate2(certPath, certPassword);
             }
 
-            connectOptions.TokenValidationParameters.ValidateAudience = true;   // by default, when we don't explicitly set ValidAudience, it is set to ClientId
-            connectOptions.TokenValidationParameters.ValidateIssuer = true;
-            connectOptions.TokenValidationParameters.ValidIssuer = configuration.ClaimsIssuer();
-            connectOptions.ProtocolValidator.RequireNonce = configuration.RequireNonce();
-            connectOptions.TokenValidationParameters.NameClaimType = ClaimTypes.NameIdentifier;
-            connectOptions.BackchannelHttpHandler = HttpClientHandlerProvider.Create();
+            return null;
         }
     }
 }
