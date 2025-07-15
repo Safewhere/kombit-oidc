@@ -158,7 +158,6 @@ namespace WebAppNetCore
 
                     var idToken = tokenResponse.GetProperty("id_token").GetString();
                     var accessToken = tokenResponse.GetProperty("access_token").GetString();
-                    var sessionState = tokenResponse.GetProperty("session_state").GetString();
 
                     // Read the Id token header to determine if it is encrypted
                     if (!string.IsNullOrEmpty(idToken))
