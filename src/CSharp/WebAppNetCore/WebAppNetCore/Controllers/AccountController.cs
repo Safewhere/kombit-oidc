@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 
 namespace WebAppNetCore.Controllers
 {
@@ -98,5 +100,28 @@ namespace WebAppNetCore.Controllers
             ViewData["Reauthenticate"] = authorizationRequest;
         }
 
+        // GET: /Account/FrontChannelLogout
+        [HttpGet]
+        [Route("front-channel-logout")]
+        [AllowAnonymous]
+        public async Task<IActionResult> FrontChannelLogout([FromQuery] string sid, [FromQuery] string iss)
+        {
+            // Validate issuer
+            var expectedIssuer = configuration["OpenIdConnectOptions:ClaimsIssuer"];
+            if (!string.Equals(iss, expectedIssuer, StringComparison.OrdinalIgnoreCase))
+                return Content("<html><body>Invalid issuer.</body></html>", "text/html");
+
+            // Normalize sid values for comparison
+            string NormalizeSid(string s) => s?.Replace(' ', '+');
+            var userSid = NormalizeSid(User.FindFirst("sid")?.Value);
+            var incomingSid = NormalizeSid(sid);
+
+            if (string.IsNullOrEmpty(userSid) || !string.Equals(incomingSid, userSid, StringComparison.Ordinal))
+                return Content("<html><body>Invalid session.</body></html>", "text/html");
+
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            Response.Headers.Remove("X-Frame-Options");
+            return Content("<html><body>Logout successful.</body></html>", "text/html");
+        }
     }
 }

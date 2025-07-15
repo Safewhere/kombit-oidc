@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 
@@ -115,6 +114,16 @@ namespace WebAppNetCore
             }
 
             return method;
+        }
+
+        public static string IdTokenDecryptionCertPath(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:IdTokenDecryptionCertPath"];
+        }
+
+        public static string IdTokenDecryptionCertPassword(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:IdTokenDecryptionCertPassword"];
         }
     }
 }
