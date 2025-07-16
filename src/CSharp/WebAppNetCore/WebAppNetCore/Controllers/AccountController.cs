@@ -107,7 +107,7 @@ namespace WebAppNetCore.Controllers
         public async Task<IActionResult> FrontChannelLogout([FromQuery] string sid, [FromQuery] string iss)
         {
             // Validate issuer
-            var expectedIssuer = configuration["OpenIdConnectOptions:ClientId"];
+            var expectedIssuer = configuration["OpenIdConnectOptions:ClaimsIssuer"];
             if (!string.Equals(iss, expectedIssuer, StringComparison.OrdinalIgnoreCase))
                 return Content("<html><body>Invalid issuer.</body></html>", "text/html");
 
