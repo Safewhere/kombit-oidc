@@ -181,6 +181,14 @@ namespace WebAppNetCore
                         }
                     }
 
+                    // extract id token and save the sid claim
+                    var jtw = new JsonWebTokenHandler().ReadJsonWebToken(idToken);
+                    var sidClaim = jtw.Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId);
+                    if (sidClaim != null)
+                    {
+                        OpenIdConnectHelper.LiveSessions[sidClaim.Value] = true;
+                    }
+
                     context.HandleCodeRedemption(accessToken, idToken);
 
                     await Task.FromResult(0);

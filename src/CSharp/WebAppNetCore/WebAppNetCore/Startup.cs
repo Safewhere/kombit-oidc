@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-
 namespace WebAppNetCore
 {
     public class Startup
@@ -43,13 +42,11 @@ namespace WebAppNetCore
             }
 
             app.UseSession();
-
-            //loggerFactory.AddConsole(Configuration.GetSection("Logging"));
-            //loggerFactory.AddDebug();
-
             app.UseStaticFiles();
-
             app.UseAuthentication();
+            
+            // Add session validation middleware after authentication
+            app.UseMiddleware<SessionValidationMiddleware>();
 
             app.UseMvc(routes =>
             {
