@@ -225,6 +225,28 @@ namespace WebAppNetCore
                         OpenIdConnectHelper.LiveSessions[sidClaim.Value] = true;
                     }
 
+                    // Read the Id token header to determine if it is encrypted
+                    if (!string.IsNullOrEmpty(idToken))
+                    {
+                        var handler = new JsonWebTokenHandler();
+                        var jwt = handler.ReadJsonWebToken(idToken);
+                        if(OpenIdConnectHelper.IdTokenEncryptedResponseAlgs.Contains(jwt.Alg) ||
+                           OpenIdConnectHelper.IdTokenEncryptedResponseEnc.Contains(jwt.Enc))
+                        {
+                            // Load certificate from store or file (for demo only)
+                            var cert = GetDecryptionCertificate(configuration);
+                            if(cert == null || !cert.HasPrivateKey)
+                            {
+                                throw new InvalidOperationException("Decryption certificate is not configured or does not have a private key.");
+                            }
+                            var encryptionCredentials = new X509EncryptingCredentials(cert, jwt.Alg, jwt.Enc);
+                            idToken = OpenIdConnectHelper.DecryptToken(idToken, encryptionCredentials);
+
+                            context.Options.TokenValidationParameters.TokenDecryptionKey = new X509SecurityKey(cert);
+                            context.Options.TokenValidationParameters.CryptoProviderFactory = new IdentifyCryptoProviderFactory();
+                        }
+                    }
+
                     context.HandleCodeRedemption(accessToken, idToken);
 
                     await Task.FromResult(0);
