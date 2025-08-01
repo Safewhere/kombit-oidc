@@ -25,15 +25,23 @@ namespace WebAppNetCore.Controllers
 
         public IActionResult Index()
         {
-            ViewData[OpenIdConnectConstants.AccessToken] = HttpContext.GetTokenAsync(OpenIdConnectConstants.AccessToken).Result;
-
+            
             ViewData["Origin"] = $"{Request.Scheme}://{Request.Host.Value}";
 
             var authorizationRequest = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, Configuration);
             ViewData["Reauthenticate"] = authorizationRequest;
 
             ViewData["EndSessionUri"] = Configuration.EndSessionEndpoint();
-            ViewData["IdTokenHint"] = HttpContext.GetTokenAsync(OpenIdConnectConstants.IdToken).Result;
+            if(HttpContext.User.Identity.IsAuthenticated)
+            {
+                ViewData["IdTokenHint"] = HttpContext.GetTokenAsync(OpenIdConnectConstants.IdToken).Result;
+                ViewData[OpenIdConnectConstants.AccessToken] = HttpContext.GetTokenAsync(OpenIdConnectConstants.AccessToken).Result;
+            }
+            else
+            {
+                ViewData["IdTokenHint"] = null;
+                ViewData[OpenIdConnectConstants.AccessToken] = null;
+            }
 
             var callbackUrl = Url.Action("SignedOutCallback", "Account", values: null, protocol: Request.Scheme);
             ViewData["RedirectUrl"] = callbackUrl;

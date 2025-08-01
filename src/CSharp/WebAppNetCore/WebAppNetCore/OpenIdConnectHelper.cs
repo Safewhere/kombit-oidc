@@ -15,6 +15,9 @@ namespace WebAppNetCore
 {
     public static class OpenIdConnectHelper
     {
+        // Keep track of live sessions for back channel logout support
+        public static Dictionary<string, bool> LiveSessions = new Dictionary<string, bool>();
+
         public static readonly string[] IdTokenEncryptedResponseAlgs = { "RSA-OAEP", "RSA-OAEP-256", "A128KW", "A192KW", "A256KW" };
         public static readonly string[] IdTokenEncryptedResponseEnc = { "A128CBC-HS256", "A192CBC-HS384", "A256CBC-HS512", "A128GCM", "A192GCM", "A256GCM" };
 

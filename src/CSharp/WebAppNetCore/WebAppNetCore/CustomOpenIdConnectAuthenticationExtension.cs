@@ -63,7 +63,7 @@ namespace WebAppNetCore
             connectOptions.UsePkce = true;
 
             var responseMode = configuration.ResponseMode();
-            if(string.IsNullOrEmpty(responseMode))
+            if (string.IsNullOrEmpty(responseMode))
             {
                 connectOptions.ResponseMode = null;
             }
@@ -145,9 +145,45 @@ namespace WebAppNetCore
                         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", creds);
                         request.Content = new FormUrlEncodedContent(parameters);
                     }
-                    else
+                    else  // private_key_jwt
                     {
-                        throw new InvalidOperationException($"Unsupported TokenAuthnMethod: {configuration.TokenAuthnMethod()}");
+                        var cert = GetDecryptionCertificate(configuration);
+                        if (cert == null || !cert.HasPrivateKey)
+                        {
+                            throw new InvalidOperationException("Client certificate is not configured or does not have a private key for private_key_jwt authentication.");
+                        }
+
+                        // Create JWT assertion for private_key_jwt
+                        var now = DateTimeOffset.UtcNow;
+                        var jti = Guid.NewGuid().ToString(); // new guid to void replay attacks check at CH2 OAuth server
+
+                        var claims = new Dictionary<string, object>
+                        {
+                            { "iss", configuration.ClientId() },
+                            { "sub", configuration.ClientId() },
+                            { "aud", tokenEndpoint },
+                            { "jti", jti },
+                            { "exp", now.AddMinutes(5).ToUnixTimeSeconds() },
+                            { "iat", now.ToUnixTimeSeconds() }
+                        };
+
+                        var handler = new JsonWebTokenHandler();
+                        // CH2 OAuth private_key_jwt authentication only support client_assertion signed by RS256 signing algorithm
+                        var signingCredentials = new X509SigningCredentials(cert, SecurityAlgorithms.RsaSha256);
+                        signingCredentials.Key.KeyId = Base64UrlEncoder.Encode(cert.GetCertHash());
+                        var tokenDescriptor = new SecurityTokenDescriptor
+                        {
+                            Claims = claims,
+                            SigningCredentials = signingCredentials
+                        };
+
+                        var clientAssertion = handler.CreateToken(tokenDescriptor);
+
+                        parameters["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
+                        parameters["client_assertion"] = clientAssertion;
+                        parameters["client_id"] = configuration.ClientId();
+
+                        request.Content = new FormUrlEncodedContent(parameters);
                     }
 
                     var response = await httpClient.SendAsync(request);
@@ -158,6 +194,36 @@ namespace WebAppNetCore
 
                     var idToken = tokenResponse.GetProperty("id_token").GetString();
                     var accessToken = tokenResponse.GetProperty("access_token").GetString();
+
+                    // Read the Id token header to determine if it is encrypted
+                    if (!string.IsNullOrEmpty(idToken))
+                    {
+                        var handler = new JsonWebTokenHandler();
+                        var jwt = handler.ReadJsonWebToken(idToken);
+                        if (OpenIdConnectHelper.IdTokenEncryptedResponseAlgs.Contains(jwt.Alg) ||
+                           OpenIdConnectHelper.IdTokenEncryptedResponseEnc.Contains(jwt.Enc))
+                        {
+                            // Load certificate from store or file (for demo only)
+                            var cert = GetDecryptionCertificate(configuration);
+                            if (cert == null || !cert.HasPrivateKey)
+                            {
+                                throw new InvalidOperationException("Decryption certificate is not configured or does not have a private key.");
+                            }
+                            var encryptionCredentials = new X509EncryptingCredentials(cert, jwt.Alg, jwt.Enc);
+                            idToken = OpenIdConnectHelper.DecryptToken(idToken, encryptionCredentials);
+
+                            context.Options.TokenValidationParameters.TokenDecryptionKey = new X509SecurityKey(cert);
+                            context.Options.TokenValidationParameters.CryptoProviderFactory = new IdentifyCryptoProviderFactory();
+                        }
+                    }
+
+                    // extract id token and save the sid claim
+                    var jtw = new JsonWebTokenHandler().ReadJsonWebToken(idToken);
+                    var sidClaim = jtw.Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId);
+                    if (sidClaim != null)
+                    {
+                        OpenIdConnectHelper.LiveSessions[sidClaim.Value] = true;
+                    }
 
                     // Read the Id token header to determine if it is encrypted
                     if (!string.IsNullOrEmpty(idToken))
