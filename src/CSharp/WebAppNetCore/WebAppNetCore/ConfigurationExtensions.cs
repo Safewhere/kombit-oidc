@@ -125,5 +125,17 @@ namespace WebAppNetCore
         {
             return configuration["OpenIdConnectOptions:IdTokenDecryptionCertPassword"];
         }
+
+        public static string JwtAssertionSigningCertPath(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:JwtAssertionSigningCertPath"];
+        }
+
+        public static string JwtAssertionSigningCertPassword(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:JwtAssertionSigningCertPassword"];
+        }
+
+        
     }
 }
