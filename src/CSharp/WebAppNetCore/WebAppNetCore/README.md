@@ -17,7 +17,13 @@ By default, all the necessary configurations for running this application are al
 
 - Support sending an authorization request using POST or GET method
 
-- Support sending a token request using a specified client authentication method like "client_secret_post" or "client_secret_basic".
+- Support sending a token request using a specified client authentication method like "client_secret_post", "client_secret_basic" or "private_key_jwt".
+
+- Support back-channel logout. The URL at /back-channel-logout
+
+- Support front-channel logout. The URL at /front-channel-logout
+
+- Support Id token encryption.
 
 # Configurations
 
@@ -46,6 +52,25 @@ For both GET and POST logout request, the /Account/SignedOutCallback endpoint sh
 
 ## Support configurable Token Authentication method
 
-- Edit "appsettings.json", change setting TokenAuthnMethod to "client_secret_post" or "client_secret_basic"
+- Edit "appsettings.json", change setting TokenAuthnMethod to "client_secret_post", "client_secret_basic" or "private_key_jwt". 
 
+## Private Key JWT client authentication
+- When using the "private_key_jwt", you must provides the jwks or jwks_uri for the Identify OAuth/OIDC connection.
+- You also need to provide the certificate to sign the client_assertion by configurating these tow settings in "appsettings.json":
+  - JwtAssertionSigningCertPath
+  - JwtAssertionSigningCertPassword
 
+## Id token encryption
+
+To enable Id token encryption, you need to configure the following settings in "appsettings.json":
+- IdTokenDecryptionCertPath
+- IdTokenDecryptionCertPassword
+
+this certificate is used to decrypt the encrypted Id token received from the identity provider.
+
+Note that Identify encrypt the Id token by using the public key from the jwks or jwks_uri configured in the Identify OAuth/OIDC connection.
+So the jwks or jwks_uri must contains the public certificate which corresponds to the above configured Id token decryption certificate.
+
+## Back-channel & Front-channel logout
+
+When enabling back-channel or front-channel logout on the Identify's OIDC connection, you must disable the EnableSessionManagement by setting it to "false".
