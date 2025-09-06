@@ -147,7 +147,7 @@ namespace WebAppNetCore
                     }
                     else  // private_key_jwt
                     {
-                        var cert = GetDecryptionCertificate(configuration);
+                        var cert = JwtAssertionSigningCertificate(configuration);
                         if (cert == null || !cert.HasPrivateKey)
                         {
                             throw new InvalidOperationException("Client certificate is not configured or does not have a private key for private_key_jwt authentication.");
@@ -279,6 +279,19 @@ namespace WebAppNetCore
             // Load certificate from store or file (for demo only)
             var certPath = ConfigurationExtensions.IdTokenDecryptionCertPath(configuration);
             var certPassword = ConfigurationExtensions.IdTokenDecryptionCertPassword(configuration);
+            if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(certPassword))
+            {
+                return new X509Certificate2(certPath, certPassword);
+            }
+
+            return null;
+        }
+
+        private static X509Certificate2? JwtAssertionSigningCertificate(IConfiguration configuration)
+        {
+            // Load certificate from store or file (for demo only)
+            var certPath = ConfigurationExtensions.JwtAssertionSigningCertPath(configuration);
+            var certPassword = ConfigurationExtensions.JwtAssertionSigningCertPassword(configuration);
             if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(certPassword))
             {
                 return new X509Certificate2(certPath, certPassword);
