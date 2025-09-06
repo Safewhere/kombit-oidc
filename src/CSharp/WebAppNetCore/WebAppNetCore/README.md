@@ -55,7 +55,7 @@ For both GET and POST logout requests, the /Account/SignedOutCallback endpoint s
 - Edit "appsettings.json" and change the setting TokenAuthnMethod to "client_secret_post", "client_secret_basic", or "private_key_jwt". 
 
 ## Private Key JWT client authentication
-- When using "private_key_jwt", you must provide the jwks or jwks_uri for the Identity OAuth/OIDC connection.
+- When using "private_key_jwt", you must provide the jwks or jwks_uri for the Identify OAuth/OIDC connection.
 - You also need to provide the certificate to sign the client_assertion by configuring these two settings in "appsettings.json":
   - JwtAssertionSigningCertPath
   - JwtAssertionSigningCertPassword
@@ -66,11 +66,11 @@ To enable ID token encryption, you need to configure the following settings in "
 - IdTokenDecryptionCertPath
 - IdTokenDecryptionCertPassword
 
-This certificate is used to decrypt the encrypted ID token received from the identity provider.
+This certificate is used to decrypt the encrypted ID token received from the Identity provider.
 
-Note that Identity encrypts the ID token by using the public key from the jwks or jwks_uri configured in the Identity OAuth/OIDC connection.
+Note that Identify OAuth server encrypts the ID token by using the public key from the jwks or jwks_uri configured in the Identify OAuth/OIDC connection.
 So the jwks or jwks_uri must contain the public certificate which corresponds to the above configured ID token decryption certificate.
 
 ## Back-channel & Front-channel logout
 
-When enabling back-channel or front-channel logout on the Identity's OIDC connection, you must disable the EnableSessionManagement by setting it to "false".
+When enabling back-channel or front-channel logout on the Identify's OIDC connection, you must disable the EnableSessionManagement by setting it to "false".
