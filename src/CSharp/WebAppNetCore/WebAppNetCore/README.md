@@ -68,8 +68,8 @@ To enable ID token encryption, you need to configure the following settings in "
 
 This certificate is used to decrypt the encrypted ID token received from the Identity provider.
 
-Note that Identify OAuth server encrypts the ID token by using the public key from the jwks or jwks_uri configured in the Identify OAuth/OIDC connection.
-So the jwks or jwks_uri must contain the public certificate which corresponds to the above configured ID token decryption certificate.
+Note that Identify OAuth server encrypts the ID token by using the public key (use="enc") from the jwks or jwks_uri configured in the Identify OAuth/OIDC connection.
+So the jwks or jwks_uri must contain the public certificate in a key (use="enc") which corresponds to the above configured ID token decryption certificate.
 
 ## Back-channel & Front-channel logout
 
