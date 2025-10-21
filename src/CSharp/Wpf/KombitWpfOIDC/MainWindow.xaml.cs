@@ -55,7 +55,7 @@ namespace KomitWpfOIDC
                 int.TryParse(MaxAgeBox.Text, out int maxAgeSec);
 
                 // 1) Build authorize URL (authorization_code flow)
-                var authorizeUrl = OpenIdConnectHelper.GenerateReauthenticateUri(acrValues, maxAgeSec);
+                var authorizeUrl = await OpenIdConnectHelper.GenerateReauthenticateUri(acrValues, maxAgeSec);
 
                 // 2) Launch browser and wait for redirect
                 var browser = new SystemBrowser();
@@ -230,7 +230,6 @@ namespace KomitWpfOIDC
                 var browser = new SystemBrowser();
                 var wait = browser.WaitForCallbackAsync(ConfigurationExtensions.LoopbackRedirect, TimeSpan.FromSeconds(30));
 
-                await RevokeAsync(_tokenInfo);
                 LaunchEndSessionInBrowser();
                 IsAuthenticated = false;
 

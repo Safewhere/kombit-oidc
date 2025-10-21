@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Web;
+using IdentityModel.Client;
 using Microsoft.IdentityModel.Tokens;
 
 namespace KomitWpfOIDC
@@ -53,32 +54,45 @@ namespace KomitWpfOIDC
             catch { return null; }
         }
 
-        public static (string Url, string CodeVerifier, string State) GenerateReauthenticateUri(string? acrValues = null, int? maxAgeSec = null)
+        public static async Task<(string Url, string CodeVerifier, string State)> GenerateReauthenticateUri(string? acrValues = null, int? maxAgeSec = null)
         {
             string state = RandomDataBase64url(32);
             string nonce = Guid.NewGuid().ToString("N");
-
-            string authorizationRequest = string.Format("{0}?response_type=code&scope={4}&redirect_uri={1}&client_id={2}" +
-                                                        "&state={3}" +
-                                                        "&nonce={5}",
-                    ConfigurationExtensions.AuthorizationEndpoint,
-                    Uri.EscapeDataString(ConfigurationExtensions.LoopbackRedirect),
-                    Uri.EscapeDataString(ConfigurationExtensions.ClientId),
-                    state,
-                    Uri.EscapeDataString(ConfigurationExtensions.Scope),
-                    nonce);
-            authorizationRequest += "&code_challenge_method=S256";
             string codeVerifier = GenerateCodeVerifier();
             string codeChallenge = GenerateCodeChallenge(codeVerifier);
-            authorizationRequest += "&code_challenge=" + codeChallenge;
+
+            var parameters = new Dictionary<string, string>
+            {
+                { "response_type", "code" },
+                { "client_id", ConfigurationExtensions.ClientId },
+                { "scope", ConfigurationExtensions.Scope },
+                { "redirect_uri", ConfigurationExtensions.LoopbackRedirect },
+                { "state", state },
+                { "nonce", nonce },
+                { "code_challenge", codeChallenge },
+                { "code_challenge_method", "S256" }
+            };
 
             if (!string.IsNullOrWhiteSpace(acrValues))
-                authorizationRequest += $"&acr_values={Uri.EscapeDataString(acrValues)}";
+                parameters.Add("acr_values", acrValues);
 
             if (maxAgeSec > 0)
-                authorizationRequest += $"&max_age={maxAgeSec}";
+                parameters.Add("max_age", maxAgeSec.ToString());
 
-            return (authorizationRequest, codeVerifier, state);
+            if (ConfigurationExtensions.AuthorizationEndpointMethod?.ToUpper() == "POST")
+            {
+                using var client = new HttpClient();
+                var content = new FormUrlEncodedContent(parameters);
+                var response = await client.PostAsync(ConfigurationExtensions.AuthorizationEndpoint, content);
+                string url = response.Headers.Location?.ToString() ?? ConfigurationExtensions.AuthorizationEndpoint;
+                return (url, codeVerifier, state);
+            }
+            else // Mặc định là GET
+            {
+                var query = string.Join("&", parameters.Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
+                string url = $"{ConfigurationExtensions.AuthorizationEndpoint}?{query}";
+                return (url, codeVerifier, state);
+            }
         }
 
         public static X509Certificate2? GetDecryptionCertificate()

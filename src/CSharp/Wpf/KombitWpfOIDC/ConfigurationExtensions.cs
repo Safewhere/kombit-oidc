@@ -26,16 +26,6 @@ namespace KomitWpfOIDC
             get => ConfigurationManager.AppSettings["ClientSecret"];
         }
 
-        public static string ResourceUri
-        {
-            get => ConfigurationManager.AppSettings["ResourceUri"];
-        }
-
-        public static Uri RedirectUri
-        {
-            get => new Uri(ConfigurationManager.AppSettings["RedirectUri"]);
-        }
-
         public static string Port
         {
             get => ConfigurationManager.AppSettings["Port"];
@@ -53,6 +43,10 @@ namespace KomitWpfOIDC
         public static string IdTokenDecryptionCertPassword
         {
             get => ConfigurationManager.AppSettings["IdTokenDecryptionCertPassword"];
+        }
+        public static string AuthorizationEndpointMethod
+        {
+            get => ConfigurationManager.AppSettings["AuthorizationEndpointMethod"];
         }
 
         public static string AuthorizationEndpoint
@@ -77,11 +71,6 @@ namespace KomitWpfOIDC
         public static string RevokeEndpoint
         {
             get => IssuerDomain + "/runtime/oauth2/revoke.idp";
-        }
-
-        public static X509Certificate2 IssuerSigningKey
-        {
-            get => new X509Certificate2(Convert.FromBase64String(ConfigurationManager.AppSettings["IssuerSigningKey"]));
         }
         public static string LoopbackRedirect => string.Format("http://{0}:{1}/", IPAddress.Loopback, Port);
     }
