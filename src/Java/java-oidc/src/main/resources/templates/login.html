@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="vi" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OIDC Web Client Java</title>
+    <style>
+        :root{
+            --bg1:#1c2b63;      /* darker variant of #243771 */
+            --bg2:#243771;      /* your primary */
+            --ink:#0f172a;      /* slate-900 */
+            --text:#e6ecff;     /* near #ccd7ff but a bit brighter */
+            --muted:#aab7ff;    /* soft accent */
+            --card:#ffffff;
+            --card-ink:#0f172a;
+            --ring:#7ea2ff;
+            --ok:#2563eb;
+            --ok-ink:#ffffff;
+            --hint:#6676c7;
+            --shadow: 0 10px 30px rgba(12, 23, 56, .35), 0 2px 6px rgba(12, 23, 56, .2);
+            --radius: 18px;
+        }
+        html, body{
+            height: 100%;
+        }
+        body{
+            margin:0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+            color: var(--text);
+            background: radial-gradient(1200px 700px at 15% 10%, rgba(255,255,255,.08), transparent 55%),
+            radial-gradient(900px 600px at 85% 90%, rgba(255,255,255,.06), transparent 60%),
+            linear-gradient(135deg, var(--bg1), var(--bg2));
+            display:grid;
+            place-items:center;
+        }
+        @media (max-width: 880px){
+            .shell{grid-template-columns: 1fr}
+        }
+
+        .logo{
+            display:flex; align-items:center; gap:12px;
+            margin-bottom: 12px;
+            justify-content: center;
+        }
+        .logo-badge{
+            width:65px;height:65px;border-radius:12px;
+            background: linear-gradient(145deg, #90a6ff, #5f79ff);
+            display:grid;place-items:center; color:white; font-weight:800;
+            box-shadow: inset 0 0 0 2px rgba(255,255,255,.35), 0 10px 18px rgba(0,0,0,.25);
+        }
+        h1{margin:0;font-size:28px;letter-spacing:.2px}
+        .bullets li{display:flex;gap:10px;align-items:flex-start}
+        .bullets svg{flex:0 0 auto;margin-top:2px}
+
+        /* card form */
+        .card{
+            background: var(--card);
+            color: var(--card-ink);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 26px 24px;
+            border: 1px solid #e9ecff;
+        }
+        .card h2{margin:0 0 6px;font-size:22px;letter-spacing:.2px}
+        .card p{margin:0 0 18px;color:#334155}
+
+        .field{margin-bottom:16px}
+        .label-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px}
+        label{font-weight:600; color:#1f2a44}
+        .hint{font-size:12px; color:#5c6ea7}
+        .input{
+            position:relative;
+            display:flex; align-items:center;
+            background:#f8faff;
+            border:1.5px solid #dfe6ff;
+            border-radius:12px;
+            transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+        }
+        .input:focus-within{
+            border-color: var(--ring);
+            box-shadow: 0 0 0 4px rgba(126,162,255,.25);
+            background:#ffffff;
+        }
+        .input input{
+            -webkit-appearance:none; appearance:none; outline:0; border:0; background:transparent;
+            width:100%; padding: 14px 14px 14px 40px; font-size:15px; color:#0b1225;
+        }
+        .input input::placeholder{color:#90a0d0}
+        .leading{
+            position:absolute; left:12px; width:18px; height:18px; opacity:.6;
+        }
+        .row{display:grid; grid-template-columns: 1fr 140px; gap:12px}
+        @media (max-width: 420px){ .row{grid-template-columns: 1fr} }
+
+        .btn{
+            display:inline-flex; align-items:center; justify-content:center; gap:10px;
+            border:0; outline:0; cursor:pointer;
+            background: linear-gradient(145deg, #3b5bff, #2847f5);
+            color: var(--ok-ink);
+            padding: 12px 16px; border-radius:12px; font-weight:700; letter-spacing:.2px;
+            box-shadow: 0 10px 18px rgba(40,71,245,.25), 0 2px 6px rgba(40,71,245,.2);
+            transition: transform .06s ease, box-shadow .15s ease, filter .15s ease;
+        }
+        .btn:hover{ filter: saturate(1.07) brightness(1.02) }
+        .btn:active{ transform: translateY(1px) }
+        .btn svg{width:18px; height:18px}
+
+
+        /* small toast */
+        .toast{
+            position: fixed; inset-inline: 0; top:12px; margin-inline:auto;
+            width: fit-content; max-width: 92vw;
+            color:#0b1225; background:#f0f4ff; border:1px solid #ccdaff;
+            padding:10px 12px; border-radius:10px; font-size:14px; display:none;
+            box-shadow: 0 6px 16px rgba(18, 32, 80, .18);
+        }
+        .toast.show{display:block; animation:fade .25s ease}
+        @keyframes fade{from{opacity:0; transform: translateY(-6px)} to{opacity:1; transform:none}}
+
+        .acr-presets{
+            width:100%;border:0;background:transparent;padding:8px;
+            font-size:15px;color:#0b1225;border-radius:12px;
+            padding: 14px 14px 14px 40px;
+        }
+    </style>
+</head>
+<body>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="shell" role="main">
+    <!-- Right: form card -->
+    <section class="card" aria-label="Login Form">
+        <div class="logo" aria-label="Logo">
+            <div class="logo-badge" aria-hidden="true">LOGO</div>
+        </div>
+        <h2>Login</h2>
+
+        <!-- Thymeleaf action: adjust to your controller -->
+        <form id="loginForm" method="get" th:action="@{/oidc/start}" action="/oidc/start" novalidate>
+            <!-- acr_values -->
+            <div class="field">
+                <div class="label-row">
+                    <label for="acr">acr_values</label>
+                </div>
+                <div class="input">
+                    <svg class="leading" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7l3-7z"
+                              stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                    </svg>
+                    <select id="acr" name="acr_values" th:value="${acr_values}" class="acr-presets">
+                        <option value=""></option>
+                        <option value="https://data.gov.dk/concept/core/nsis/loa/Low">Low</option>
+                        <option value="https://data.gov.dk/concept/core/nsis/loa/Substantial">Substantial</option>
+                        <option value="https://data.gov.dk/concept/core/nsis/loa/High">High</option>
+                        <option value="urn:dk:gov:saml:attribute:AssuranceLevel:1">AssuranceLevel 1</option>
+                        <option value="urn:dk:gov:saml:attribute:AssuranceLevel:2">AssuranceLevel 2</option>
+                        <option value="urn:dk:gov:saml:attribute:AssuranceLevel:3">AssuranceLevel 3</option>
+                        <option value="urn:dk:gov:saml:attribute:AssuranceLevel:4">AssuranceLevel 4</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- max_age -->
+            <div class="field">
+                <div class="label-row">
+                    <label for="maxAge">max_age</label>
+                </div>
+                <div class="row">
+                    <div class="input">
+                        <svg class="leading" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+                            <path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                        <input id="maxAge" name="max_age" th:value="${max_age}" type="number" inputmode="numeric" min="1" step="1"
+                               placeholder="Optional" />
+                    </div>
+                    <button class="btn" type="submit" id="loginBtn" aria-label="Login">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M5 12h12m0 0-4-4m4 4-4 4" stroke="currentColor" stroke-width="1.8"
+                                  stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Login
+                    </button>
+                </div>
+            </div>
+        </form>
+    </section>
+</div>
+
+<script>
+    (function () {
+        const form = document.getElementById('loginForm');
+        const acr = document.getElementById('acr');
+        const maxAge = document.getElementById('maxAge');
+        const toast = document.getElementById('toast');
+
+        // // Restore previous session values
+        // const saved = sessionStorage.getItem('oidcDemoForm');
+        // if (saved) {
+        //     try {
+        //         const data = JSON.parse(saved);
+        //         if (typeof data.acr_values === 'string') acr.value = data.acr_values;
+        //         if (typeof data.max_age === 'number') maxAge.value = data.max_age;
+        //     } catch {}
+        // }
+
+        function showToast(msg){
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(()=>toast.classList.remove('show'), 2600);
+        }
+
+        form.addEventListener('submit', function (e) {
+            // light client-side validation for max_age
+            const v = maxAge.value.trim();
+            if (v !== '' && (isNaN(v) || Number(v) < 1)) {
+                e.preventDefault();
+                showToast('max_age must to ≥ 1.');
+                maxAge.focus();
+                return false;
+            }
+
+            // persist for convenience
+            const payload = {
+                acr_values: acr.value.trim(),
+                max_age: v === '' ? null : Number(v)
+            };
+            try { sessionStorage.setItem('oidcDemoForm', JSON.stringify(payload)); } catch {}
+
+            // (Optional) Enforce clean query: strip empty pairs if any
+            // When using plain GET, the browser might include empty values;
+            // building the URL manually ensures we only send filled params.
+            // Comment out this block if you prefer default GET serialization.
+            e.preventDefault();
+            const url = new URL(form.getAttribute('action') || form.action, window.location.origin);
+            if (payload.acr_values) url.searchParams.set('acr_values', payload.acr_values);
+            if (payload.max_age != null) url.searchParams.set('max_age', String(payload.max_age));
+            window.location.assign(url.toString());
+        });
+    })();
+    window.addEventListener("pageshow", (e) => {
+        if (e.persisted) document.getElementById("loginForm")?.reset();
+    });
+</script>
+</body>
+</html>
