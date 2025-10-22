@@ -1,14 +1,13 @@
-﻿using System.Configuration;
-using System.IdentityModel.Tokens.Jwt;
+﻿using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Web;
-using IdentityModel.Client;
+using KombitWpfOIDC;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
 
 namespace KomitWpfOIDC
 {
@@ -56,6 +55,7 @@ namespace KomitWpfOIDC
 
         public static async Task<(string Url, string CodeVerifier, string State)> GenerateReauthenticateUri(string? acrValues = null, int? maxAgeSec = null)
         {
+            Log.Debug("GenerateReauthenticateUri(acr={Acr}, max_age={Max})", acrValues, maxAgeSec);
             string state = RandomDataBase64url(32);
             string nonce = Guid.NewGuid().ToString("N");
             string codeVerifier = GenerateCodeVerifier();
@@ -79,18 +79,22 @@ namespace KomitWpfOIDC
             if (maxAgeSec > 0)
                 parameters.Add("max_age", maxAgeSec.ToString());
 
+            LoggerConfig.InfoAsJson("Parameters", parameters);
+
             if (ConfigurationExtensions.AuthorizationEndpointMethod?.ToUpper() == "POST")
             {
                 using var client = new HttpClient();
                 var content = new FormUrlEncodedContent(parameters);
                 var response = await client.PostAsync(ConfigurationExtensions.AuthorizationEndpoint, content);
                 string url = response.Headers.Location?.ToString() ?? ConfigurationExtensions.AuthorizationEndpoint;
+                Log.Debug("Auth method POST, Location: {Url}", url);
                 return (url, codeVerifier, state);
             }
             else // Mặc định là GET
             {
                 var query = string.Join("&", parameters.Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
                 string url = $"{ConfigurationExtensions.AuthorizationEndpoint}?{query}";
+                Log.Debug("Auth method GET, URL: {Url}", url);
                 return (url, codeVerifier, state);
             }
         }
@@ -173,6 +177,7 @@ namespace KomitWpfOIDC
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "Failed to decrypt the JWT token");
                 throw new SecurityTokenDecryptionFailedException("Failed to decrypt the JWT token.", ex);
             }
         }

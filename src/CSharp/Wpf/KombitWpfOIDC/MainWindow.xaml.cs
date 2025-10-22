@@ -8,7 +8,9 @@ using System.Windows.Controls;
 using IdentityModel.Client;
 using IdentityModel.OidcClient;
 using IdentityModel.OidcClient.Browser;
+using KombitWpfOIDC;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
 namespace KomitWpfOIDC
 {
     /// <summary>
@@ -45,6 +47,8 @@ namespace KomitWpfOIDC
                     }
                 }
             };
+
+            LoggerConfig.InfoAsJson("OIDC client options configured", _options);
         }
         private async void BtnLogin_Click(object sender, RoutedEventArgs e)
         {
@@ -56,6 +60,7 @@ namespace KomitWpfOIDC
 
                 // 1) Build authorize URL (authorization_code flow)
                 var authorizeUrl = await OpenIdConnectHelper.GenerateReauthenticateUri(acrValues, maxAgeSec);
+                Log.Information("AuthorizeUrl: {0}", authorizeUrl.Url);
 
                 // 2) Launch browser and wait for redirect
                 var browser = new SystemBrowser();
@@ -64,6 +69,7 @@ namespace KomitWpfOIDC
 
                 if (browserResult.ResultType != BrowserResultType.Success)
                 {
+                    Log.Warning("Browser authorization did not succeed: {0}", browserResult.Error);
                     return;
                 }
 
@@ -92,10 +98,12 @@ namespace KomitWpfOIDC
                 });
 
                 var tokenResp = await _http.PostAsync(ConfigurationExtensions.TokenEndpoint, tokenRequest);
+                LoggerConfig.InfoAsJson("Token Request: {0}", tokenRequest);
                 var tokenRespContent = await tokenResp.Content.ReadAsStringAsync();
 
                 if (!tokenResp.IsSuccessStatusCode)
                 {
+                    Log.Error("Token exchange failed: {0}", tokenRespContent);
                     return;
                 }
 
@@ -108,6 +116,7 @@ namespace KomitWpfOIDC
 
                 if (string.IsNullOrWhiteSpace(idToken))
                 {
+                    Log.Error("Token response missing id_token");
                     return;
                 }
 
@@ -141,7 +150,7 @@ namespace KomitWpfOIDC
                     }
                     if (isEncrypted)
                     {
-
+                        Log.Information("id_token is encrypted (enc={Enc}, alg={Alg}) – trying to decrypt", contentEncAlg, keyMgmtAlg);
                         var decryptCert = OpenIdConnectHelper.GetDecryptionCertificate();
                         if (decryptCert == null)
                             throw new InvalidOperationException("Id token is encrypted but no decryption certificate is configured.");
@@ -153,6 +162,7 @@ namespace KomitWpfOIDC
                         try
                         {
                             decryptedJws = OpenIdConnectHelper.DecryptToken(tokenToValidate, encCreds);
+                            Log.Information("Decryption Token", decryptedJws);
                         }
                         catch (SecurityTokenDecryptionFailedException)
                         {
@@ -205,6 +215,7 @@ namespace KomitWpfOIDC
                 }
                 catch (Exception ex)
                 {
+                    Log.Error(ex, "id_token validation/decryption failed");
                     return;
                 }
 
@@ -212,6 +223,7 @@ namespace KomitWpfOIDC
                 _tokenInfo.RefreshToken = refreshToken;
                 _tokenInfo.AccessTokenExp = DateTimeOffset.UtcNow.AddSeconds(expiresIn);
                 LogInfomation(_tokenInfo?.IdToken);
+                LoggerConfig.InfoAsJson("Token Information", _tokenInfo);
 
             }
             catch (Exception ex)
@@ -224,6 +236,7 @@ namespace KomitWpfOIDC
             {
                 if (_tokenInfo is null)
                 {
+                    Log.Error("Token response missing id_token");
                     return;
                 }
 
@@ -241,6 +254,7 @@ namespace KomitWpfOIDC
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "Error during logout");
             }
         }
         private async Task RevokeAsync(TokenInfo token)
@@ -255,7 +269,7 @@ namespace KomitWpfOIDC
                     Token = token.RefreshToken!,
                     TokenTypeHint = "refresh_token"
                 });
-                if (res.IsError) Log($"Revoke refresh_token failed: {res.Error}");
+                if (res.IsError) LogText($"Revoke refresh_token failed: {res.Error}");
             }
 
             if (!string.IsNullOrWhiteSpace(token.AccessToken))
@@ -268,20 +282,28 @@ namespace KomitWpfOIDC
                     Token = token.AccessToken!,
                     TokenTypeHint = "access_token"
                 });
-                if (res.IsError) Log($"Revoke access_token failed: {res.Error}");
+                if (res.IsError) LogText($"Revoke access_token failed: {res.Error}");
             }
         }
         private void LaunchEndSessionInBrowser()
         {
-            var postLogout = Uri.EscapeDataString(ConfigurationExtensions.LoopbackRedirect);
-            var endSessionUrl = $"{ConfigurationExtensions.EndSessionEndpoint}?id_token_hint={Uri.EscapeDataString(_tokenInfo?.IdToken ?? "")}&post_logout_redirect_uri={postLogout}";
-            Process.Start(new ProcessStartInfo
+            try
             {
-                FileName = endSessionUrl,
-                UseShellExecute = true
-            });
+                var postLogout = Uri.EscapeDataString(ConfigurationExtensions.LoopbackRedirect);
+                var endSessionUrl = $"{ConfigurationExtensions.EndSessionEndpoint}?id_token_hint={Uri.EscapeDataString(_tokenInfo?.IdToken ?? "")}&post_logout_redirect_uri={postLogout}";
+                Log.Debug("Launching end-session URL: {Url}", endSessionUrl);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = endSessionUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to launch end session URL");
+            }
         }
-        private void Log(string s, bool flag = false)
+        private void LogText(string s, bool flag = false)
         {
             void write()
             {
