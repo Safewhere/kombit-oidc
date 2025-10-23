@@ -1,91 +1,58 @@
 ﻿using System.Configuration;
 using System.Net;
+using System.Net.Http;
+using IdentityModel.Client;
 
 namespace KombitWpfOIDC
 {
     public static class ConfigurationExtensions
     {
-        public static string IssuerDomain
+        private static DiscoveryDocumentResponse? _disco;
+        private static readonly HttpClient _http = new();
+        public static string IssuerDomain => (ConfigurationManager.AppSettings["IssuerDomain"]??string.Empty).TrimEnd('/');
+        public static string ClaimsIssuer => (ConfigurationManager.AppSettings["ClaimsIssuer"] ?? string.Empty).TrimEnd('/');
+        public static string ClientId => ConfigurationManager.AppSettings["ClientId"] ?? string.Empty;
+        public static string ClientSecret => ConfigurationManager.AppSettings["ClientSecret"] ?? string.Empty;
+        public static string Port => ConfigurationManager.AppSettings["Port"] ?? string.Empty;
+        public static string Scope => ConfigurationManager.AppSettings["Scope"] ?? string.Empty;
+        public static string IdTokenDecryptionCertPath => ConfigurationManager.AppSettings["IdTokenDecryptionCertPath"] ?? string.Empty;
+        public static string IdTokenDecryptionCertPassword => ConfigurationManager.AppSettings["IdTokenDecryptionCertPassword"] ?? string.Empty;
+        public static string AuthorizationEndpointMethod => ConfigurationManager.AppSettings["AuthorizationEndpointMethod"] ?? string.Empty;
+
+        public static async Task<DiscoveryDocumentResponse> GetDiscoveryAsync()
         {
-            get => ConfigurationManager.AppSettings["IssuerDomain"].TrimEnd('/');
+            if (_disco != null) return _disco;
+            if (string.IsNullOrWhiteSpace(ClaimsIssuer))
+                throw new InvalidOperationException("ClaimsIssuer is not configured.");
+
+            var disco = await _http.GetDiscoveryDocumentAsync(new DiscoveryDocumentRequest
+            {
+                Address = ClaimsIssuer,
+                Policy = new DiscoveryPolicy
+                {
+                    RequireHttps = true,
+                    ValidateEndpoints = false
+                }
+            }).ConfigureAwait(false);
+
+            if (disco.IsError)
+                throw new Exception($"Discovery error: {disco.Error}");
+
+            _disco = disco;
+            return disco;
+        }
+        private static DiscoveryDocumentResponse RequireDisco()
+        {
+            if (_disco == null)
+                throw new InvalidOperationException("OIDC discovery not loaded.");
+            return _disco;
         }
 
-        public static string ClaimsIssuer
-        {
-            get => ConfigurationManager.AppSettings["ClaimsIssuer"];
-        }
-
-        public static string ClientId
-        {
-            get => ConfigurationManager.AppSettings["ClientId"];
-        }
-
-        public static string ClientSecret
-        {
-            get => ConfigurationManager.AppSettings["ClientSecret"];
-        }
-
-        public static string Port
-        {
-            get => ConfigurationManager.AppSettings["Port"];
-        }
-
-        public static string Scope
-        {
-            get => ConfigurationManager.AppSettings["Scope"];
-        }
-        public static string IdTokenDecryptionCertPath
-        {
-            get => ConfigurationManager.AppSettings["IdTokenDecryptionCertPath"];
-        }
-
-        public static string IdTokenDecryptionCertPassword
-        {
-            get => ConfigurationManager.AppSettings["IdTokenDecryptionCertPassword"];
-        }
-        public static string AuthorizationEndpointMethod
-        {
-            get => ConfigurationManager.AppSettings["AuthorizationEndpointMethod"];
-        }
-
-        public static string AuthorizationEndpoint
-        {
-            get => IssuerDomain + "/runtime/oauth2/authorize.idp";
-        }
-
-        public static string TokenEndpoint
-        {
-            get => IssuerDomain + "/runtime/oauth2/token.idp";
-        }
-
-        public static string RegistrationEndpoint
-        {
-            get => IssuerDomain + "/runtime/oauth2/register.idp";
-        }
-        public static string IntrospectionEndpoint
-        {
-            get => IssuerDomain + "/runtime/oauth2/introspect.idp";
-        }
-
-        public static string UserInfoEndpoint
-        {
-            get => IssuerDomain + "/runtime/openidconnect/userinfo.idp";
-        }
-
-        public static string EndSessionEndpoint
-        {
-            get => IssuerDomain + "/runtime/openidconnect/logout.idp";
-        }
-
-        public static string CheckSessionIframe
-        {
-            get => IssuerDomain + "/runtime/openidconnect/sessionlogout.idp";
-        }
-
-        public static string RevokeEndpoint
-        {
-            get => IssuerDomain + "/runtime/oauth2/revoke.idp";
-        }
+        public static string AuthorizationEndpoint => RequireDisco().AuthorizeEndpoint;
+        public static string TokenEndpoint => RequireDisco().TokenEndpoint;
+        public static string UserInfoEndpoint => RequireDisco().UserInfoEndpoint;
+        public static string EndSessionEndpoint => RequireDisco().EndSessionEndpoint;
+        public static string RevokeEndpoint => RequireDisco().RevocationEndpoint;
         public static string LoopbackRedirect => string.Format("http://{0}:{1}/", IPAddress.Loopback, Port);
     }
 

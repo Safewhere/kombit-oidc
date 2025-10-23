@@ -11,8 +11,9 @@ namespace KombitWpfOIDC
     /// </summary>
     public partial class App : Application
     {
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
+            await ConfigurationExtensions.GetDiscoveryAsync();
             LoggerConfig.Init();
             base.OnStartup(e);
         }
