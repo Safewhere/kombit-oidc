@@ -9,10 +9,8 @@ namespace KombitWpfOIDC
     {
         private static DiscoveryDocumentResponse? _disco;
         private static readonly HttpClient _http = new();
-        public static string IssuerDomain => (ConfigurationManager.AppSettings["IssuerDomain"]??string.Empty).TrimEnd('/');
         public static string ClaimsIssuer => (ConfigurationManager.AppSettings["ClaimsIssuer"] ?? string.Empty).TrimEnd('/');
         public static string ClientId => ConfigurationManager.AppSettings["ClientId"] ?? string.Empty;
-        public static string ClientSecret => ConfigurationManager.AppSettings["ClientSecret"] ?? string.Empty;
         public static string Port => ConfigurationManager.AppSettings["Port"] ?? string.Empty;
         public static string Scope => ConfigurationManager.AppSettings["Scope"] ?? string.Empty;
         public static string IdTokenDecryptionCertPath => ConfigurationManager.AppSettings["IdTokenDecryptionCertPath"] ?? string.Empty;
@@ -36,7 +34,7 @@ namespace KombitWpfOIDC
             }).ConfigureAwait(false);
 
             if (disco.IsError)
-                throw new Exception($"Discovery error: {disco.Error}");
+                throw new InvalidOperationException($"OIDC Discovery error: {disco.Error}");
 
             _disco = disco;
             return disco;
@@ -50,7 +48,6 @@ namespace KombitWpfOIDC
 
         public static string AuthorizationEndpoint => RequireDisco().AuthorizeEndpoint;
         public static string TokenEndpoint => RequireDisco().TokenEndpoint;
-        public static string UserInfoEndpoint => RequireDisco().UserInfoEndpoint;
         public static string EndSessionEndpoint => RequireDisco().EndSessionEndpoint;
         public static string RevokeEndpoint => RequireDisco().RevocationEndpoint;
         public static string LoopbackRedirect => string.Format("http://{0}:{1}/", IPAddress.Loopback, Port);

@@ -33,7 +33,6 @@ namespace KombitWpfOIDC
             {
                 Authority = ConfigurationExtensions.ClaimsIssuer,
                 ClientId = ConfigurationExtensions.ClientId,
-                ClientSecret = ConfigurationExtensions.ClientSecret,
                 Scope = ConfigurationExtensions.Scope,
                 RedirectUri = ConfigurationExtensions.LoopbackRedirect,
                 PostLogoutRedirectUri = ConfigurationExtensions.LoopbackRedirect,
@@ -93,7 +92,6 @@ namespace KombitWpfOIDC
                     new KeyValuePair<string,string>("code", code),
                     new KeyValuePair<string,string>("redirect_uri", ConfigurationExtensions.LoopbackRedirect),
                     new KeyValuePair<string,string>("client_id", ConfigurationExtensions.ClientId),
-                    new KeyValuePair<string,string>("client_secret", ConfigurationExtensions.ClientSecret),
                     new KeyValuePair<string,string>("code_verifier", authorizeUrl.CodeVerifier)
                 });
 
@@ -257,34 +255,7 @@ namespace KombitWpfOIDC
                 Log.Error(ex, "Error during logout");
             }
         }
-        private async Task RevokeAsync(TokenInfo token)
-        {
-            if (!string.IsNullOrWhiteSpace(token.RefreshToken))
-            {
-                var res = await _http.RevokeTokenAsync(new TokenRevocationRequest
-                {
-                    Address = ConfigurationExtensions.RevokeEndpoint,
-                    ClientId = ConfigurationExtensions.ClientId,
-                    ClientSecret = ConfigurationExtensions.ClientSecret,
-                    Token = token.RefreshToken!,
-                    TokenTypeHint = "refresh_token"
-                });
-                if (res.IsError) LogText($"Revoke refresh_token failed: {res.Error}");
-            }
 
-            if (!string.IsNullOrWhiteSpace(token.AccessToken))
-            {
-                var res = await _http.RevokeTokenAsync(new TokenRevocationRequest
-                {
-                    Address = ConfigurationExtensions.RevokeEndpoint,
-                    ClientId = ConfigurationExtensions.ClientId,
-                    ClientSecret = ConfigurationExtensions.ClientSecret,
-                    Token = token.AccessToken!,
-                    TokenTypeHint = "access_token"
-                });
-                if (res.IsError) LogText($"Revoke access_token failed: {res.Error}");
-            }
-        }
         private void LaunchEndSessionInBrowser()
         {
             try
