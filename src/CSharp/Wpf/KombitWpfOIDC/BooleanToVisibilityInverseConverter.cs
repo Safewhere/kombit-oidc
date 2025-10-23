@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Data;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public class BooleanToVisibilityInverseConverter : IValueConverter
     {

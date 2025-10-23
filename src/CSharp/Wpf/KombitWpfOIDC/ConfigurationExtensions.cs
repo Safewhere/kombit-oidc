@@ -1,8 +1,7 @@
 ﻿using System.Configuration;
 using System.Net;
-using System.Security.Cryptography.X509Certificates;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public static class ConfigurationExtensions
     {
@@ -59,6 +58,15 @@ namespace KomitWpfOIDC
             get => IssuerDomain + "/runtime/oauth2/token.idp";
         }
 
+        public static string RegistrationEndpoint
+        {
+            get => IssuerDomain + "/runtime/oauth2/register.idp";
+        }
+        public static string IntrospectionEndpoint
+        {
+            get => IssuerDomain + "/runtime/oauth2/introspect.idp";
+        }
+
         public static string UserInfoEndpoint
         {
             get => IssuerDomain + "/runtime/openidconnect/userinfo.idp";
@@ -68,6 +76,12 @@ namespace KomitWpfOIDC
         {
             get => IssuerDomain + "/runtime/openidconnect/logout.idp";
         }
+
+        public static string CheckSessionIframe
+        {
+            get => IssuerDomain + "/runtime/openidconnect/sessionlogout.idp";
+        }
+
         public static string RevokeEndpoint
         {
             get => IssuerDomain + "/runtime/oauth2/revoke.idp";

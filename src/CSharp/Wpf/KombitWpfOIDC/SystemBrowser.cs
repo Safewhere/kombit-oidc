@@ -3,7 +3,7 @@ using System.Net;
 using System.Text;
 using IdentityModel.OidcClient.Browser;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public class SystemBrowser : IBrowser
     {

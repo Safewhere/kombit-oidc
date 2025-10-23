@@ -9,7 +9,7 @@ using KombitWpfOIDC;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public class OpenIdConnectHelper
     {
@@ -90,7 +90,7 @@ namespace KomitWpfOIDC
                 Log.Debug("Auth method POST, Location: {Url}", url);
                 return (url, codeVerifier, state);
             }
-            else // Mặc định là GET
+            else
             {
                 var query = string.Join("&", parameters.Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
                 string url = $"{ConfigurationExtensions.AuthorizationEndpoint}?{query}";

@@ -1,6 +1,6 @@
 ﻿using Microsoft.IdentityModel.Tokens;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public class IdentifyRsaKeyWrapProvider : KeyWrapProvider
     {

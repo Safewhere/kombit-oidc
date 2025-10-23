@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public static class NumberOnlyBehavior
     {

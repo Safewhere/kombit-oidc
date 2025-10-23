@@ -1,7 +1,10 @@
-﻿using System.Security.Cryptography;
+﻿// Source: Copied from Safewhere/kombit-oidc - https://github.com/Safewhere/kombit-oidc/blob/main/src/CSharp/WebAppNetCore/WebAppNetCore/IdentifyAsymmetricAdapter.cs
+// Modifications in this file: NONE
+
+using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     delegate byte[] EncryptDelegate(byte[] bytes);
     delegate byte[] DecryptDelegate(byte[] bytes);

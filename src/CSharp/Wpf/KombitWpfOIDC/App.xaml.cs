@@ -4,7 +4,7 @@ using System.Windows;
 using KombitWpfOIDC;
 using Serilog;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     /// <summary>
     /// Interaction logic for App.xaml

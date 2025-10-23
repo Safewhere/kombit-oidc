@@ -1,7 +1,7 @@
 ﻿using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     public class IdentifyAuthenticatedEncryptionProvider : AuthenticatedEncryptionProvider
     {

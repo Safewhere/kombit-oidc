@@ -11,7 +11,7 @@ using IdentityModel.OidcClient.Browser;
 using KombitWpfOIDC;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
-namespace KomitWpfOIDC
+namespace KombitWpfOIDC
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
