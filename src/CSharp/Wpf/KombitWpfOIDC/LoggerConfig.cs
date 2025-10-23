@@ -9,7 +9,7 @@ namespace KombitWpfOIDC
     {
         public static void Init()
         {
-            var logPath = Path.Combine(AppContext.BaseDirectory, "logs", "komit-oidc-.log");
+            var logPath = Path.Combine(AppContext.BaseDirectory, "logs", "kombit-oidc-.log");
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .WriteTo.Console()
