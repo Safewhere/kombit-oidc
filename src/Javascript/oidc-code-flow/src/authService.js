@@ -145,17 +145,17 @@ class CustomUserManager extends UserManager {
                 try {
                     return await this._useRefreshToken({ ...args, refresh_token: user.refresh_token });
                 } catch (err) {
-                    console.error("[signinSilent] Refresh token failed");
+                    console.error("[signinSilent] Refresh token failed, attempting silent reauthentication");
 
                     const { isAuthnMethodPost } = sessionStore.get(AUTH_FORM_SETTINGS) || {};
                     const extraQueryParams = {
-                        nonce: this._settings.extraQueryParams.nonce,
-                        prompt: "login"
+                        nonce: this._settings.extraQueryParams.nonce
+                        // Removed prompt: "login" to allow silent reauthentication without forcing interactive login
                     };
 
                     this.prepareSigninParams(extraQueryParams);
 
-                    console.log("[signinSilent] Attempting to sign in via redirect or POST: ", extraQueryParams);
+                    console.log("[signinSilent] Attempting to sign in silently via redirect or POST: ", extraQueryParams);
 
                     return isAuthnMethodPost
                         ? this.signinPost({ extraQueryParams })
