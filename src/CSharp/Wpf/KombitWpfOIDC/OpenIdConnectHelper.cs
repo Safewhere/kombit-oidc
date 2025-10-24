@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using KombitWpfOIDC;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
@@ -130,50 +131,32 @@ namespace KombitWpfOIDC
 
             try
             {
-                // Parse the JWE token parts
-                var tokenParts = encryptedToken.Split('.');
-                if (tokenParts.Length != 5)
-                    throw new ArgumentException("Invalid JWE token format. Expected 5 parts separated by '.'", nameof(encryptedToken));
+                var handler = new JsonWebTokenHandler { MapInboundClaims = false };
+                var cpf = decryptionCredentials.Key.CryptoProviderFactory ?? new CryptoProviderFactory();
 
-                var encodedHeader = tokenParts[0];
-                var encryptedKey = tokenParts[1];
-                var initializationVector = tokenParts[2];
-                var ciphertext = tokenParts[3];
-                var authenticationTag = tokenParts[4];
-
-                // Decode the header to get encryption algorithm information
-                var headerJson = Base64UrlEncoder.Decode(encodedHeader);
-                var header = JwtHeader.Base64UrlDeserialize(encodedHeader);
-
-                // Get the encryption algorithm and key management algorithm from header
-                var encryptionAlgorithm = header.Enc;
-                var keyManagementAlgorithm = header.Alg;
-
-                // Set up crypto provider factory
-                var cryptoProviderFactory = new IdentifyCryptoProviderFactory();
-
-                // Unwrap the content encryption key
-                SecurityKey contentEncryptionKey = GetContentEncryptionKey(
-                    decryptionCredentials.Key,
-                    keyManagementAlgorithm,
-                    encryptionAlgorithm,
-                    encryptedKey,
-                    cryptoProviderFactory);
-
-                // Decrypt the payload
-                using (var decryptionProvider = cryptoProviderFactory.CreateAuthenticatedEncryptionProvider(contentEncryptionKey, encryptionAlgorithm))
+                var tvp = new TokenValidationParameters
                 {
-                    if (decryptionProvider == null)
-                        throw new SecurityTokenDecryptionFailedException("Failed to create decryption provider.");
+                    ValidateIssuer = false,
+                    ValidateAudience = false,
+                    ValidateLifetime = false,
+                    RequireSignedTokens = false,
+                    TokenDecryptionKeys = new[] { decryptionCredentials.Key },
+                    CryptoProviderFactory = cpf
+                };
 
-                    var ivBytes = Base64UrlEncoder.DecodeBytes(initializationVector);
-                    var ciphertextBytes = Base64UrlEncoder.DecodeBytes(ciphertext);
-                    var authTagBytes = Base64UrlEncoder.DecodeBytes(authenticationTag);
-                    var aadBytes = Encoding.ASCII.GetBytes(encodedHeader);
-
-                    var decryptedBytes = decryptionProvider.Decrypt(ciphertextBytes, aadBytes, ivBytes, authTagBytes);
-                    return Encoding.UTF8.GetString(decryptedBytes);
+                var result = handler.ValidateToken(encryptedToken, tvp);
+                if (!result.IsValid || result.SecurityToken is not JsonWebToken jwt)
+                {
+                    var errorMsg = result.Exception?.Message ?? "Unknown validation error";
+                    Log.Error("Token decryption validation failed: {Error}", errorMsg);
+                    throw new SecurityTokenDecryptionFailedException("Failed to decrypt the JWE.", result.Exception);
                 }
+
+                return jwt.EncodedToken;
+            }
+            catch (SecurityTokenDecryptionFailedException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
