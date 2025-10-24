@@ -77,6 +77,19 @@
             <p>{{ accessTokenPayload }}</p>
           </div>
         </div>
+
+        <div v-if="refreshToken">
+          <h2>Refresh Token</h2>
+          <p class="token">{{ refreshToken }}</p>
+          <div class="decoded" v-if="refreshTokenHeader">
+            <h3>Header</h3>
+            <p>{{ refreshTokenHeader }}</p>
+          </div>
+          <div class="decoded" v-if="refreshTokenPayload">
+            <h3>Payload</h3>
+            <p>{{ refreshTokenPayload }}</p>
+          </div>
+        </div>
       </div>
     </div>
     <ErrorView v-if="error" :error="error" :description="description" />
@@ -97,10 +110,13 @@ import { sessionStore } from '../storageHelper';
 const user = ref(null);
 const accessToken = ref(null);
 const idToken = ref(null);
+const refreshToken = ref(null);
 const accessTokenHeader = ref(null);
 const accessTokenPayload = ref(null);
 const idTokenHeader = ref(null);
 const idTokenPayload = ref(null);
+const refreshTokenHeader = ref(null);
+const refreshTokenPayload = ref(null);
 
 // Form settings
 const selectedSecurityLevel = ref("");
@@ -135,6 +151,7 @@ const login = async (isForceAuthn, isPassive) => {
     user.value = await authService.getUser();
     accessToken.value = await authService.getAccessToken();
     idToken.value = await authService.getIdToken();
+    refreshToken.value = await authService.getRefreshToken();
 
     var decodedAccessToken = await authService.decodeToken(accessToken.value);
     if (decodedAccessToken) {
@@ -146,6 +163,14 @@ const login = async (isForceAuthn, isPassive) => {
     if (decodedIdToken) {
       idTokenHeader.value = decodedIdToken.header;
       idTokenPayload.value = decodedIdToken.payload;
+    }
+
+    if (refreshToken.value) {
+      var decodedRefreshToken = await authService.decodeToken(refreshToken.value);
+      if (decodedRefreshToken) {
+        refreshTokenHeader.value = decodedRefreshToken.header;
+        refreshTokenPayload.value = decodedRefreshToken.payload;
+      }
     }
   } catch (error) {
     console.error("Login failed:", error);
@@ -159,6 +184,7 @@ const logout = async () => {
     user.value = null;
     accessToken.value = null;
     idToken.value = null;
+    refreshToken.value = null;
     selectedSecurityLevel.value = "";
   } catch (error) {
     console.error("Logout failed:", error);
@@ -171,6 +197,7 @@ const loadUserTokens = async () => {
 
   accessToken.value = await authService.getAccessToken();
   idToken.value = await authService.getIdToken();
+  refreshToken.value = await authService.getRefreshToken();
 
   const decodedAccessToken = await authService.decodeToken(accessToken.value);
   if (decodedAccessToken) {
@@ -182,6 +209,14 @@ const loadUserTokens = async () => {
   if (decodedIdToken) {
     idTokenHeader.value = decodedIdToken.header;
     idTokenPayload.value = decodedIdToken.payload;
+  }
+
+  if (refreshToken.value) {
+    const decodedRefreshToken = await authService.decodeToken(refreshToken.value);
+    if (decodedRefreshToken) {
+      refreshTokenHeader.value = decodedRefreshToken.header;
+      refreshTokenPayload.value = decodedRefreshToken.payload;
+    }
   }
 
   isAuthReady.value = false;

@@ -98,6 +98,44 @@ class CustomUserManager extends UserManager {
         });
     }
 
+    signoutPost(args = {}) {
+        args = Object.assign({}, args);
+
+        return this._signoutStartPost(args, this._redirectNavigator).then(() => {
+            console.log("UserManager.signoutPost: successful");
+        });
+    }
+
+    _signoutStartPost(args, navigator) {
+        return navigator.prepare().then(handle => {
+            return this.createSignoutRequest(args).then(signoutRequest => {
+                let url = new URL(signoutRequest.url);
+
+                const form = document.createElement("form");
+                form.method = "POST";
+                form.action = url.origin + url.pathname;
+
+                url.searchParams.forEach((value, key) => {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = key;
+                    input.value = value;
+                    form.appendChild(input);
+                });
+
+                document.body.appendChild(form);
+                form.submit();
+
+                return Promise.resolve(); // Since navigation happens via form submission
+            }).catch(err => {
+                if (handle.close) {
+                    handle.close();
+                }
+                throw err;
+            });
+        });
+    }
+
     async signinSilent(args = {}) {
         console.log("[signinSilent] called");
         args = Object.assign({}, args);
@@ -184,8 +222,6 @@ class CustomUserManager extends UserManager {
         
         args.grant_type = args.grant_type || "refresh_token";
         args.client_id = args.client_id || this._settings.client_id;
-        args.redirect_uri = settings.redirect_uri;
-        args.code_verifier = sessionStore.get(CODE_VERIFIER_KEY);
 
         const client_authentication = args._client_authentication || this._settings._client_authentication;
         delete args._client_authentication;
@@ -244,6 +280,7 @@ class CustomUserManager extends UserManager {
 class AuthService {
     constructor() {
         this.userManager = new CustomUserManager(settings);
+        this.usePostLogout = false; // Flag to track if POST logout should be used
         this.setupEventListeners();
     }
 
@@ -251,6 +288,18 @@ class AuthService {
         this.userManager.events.addUserSignedOut(async () => {
             console.log("User signed out event triggered.");
             await this.logout();
+        });
+
+        // Handle silent renew errors, especially login_required
+        this.userManager.events.addSilentRenewError(async (error) => {
+            console.error("Silent renew error:", error);
+            
+            // Check if the error is login_required
+            if (error && (error.error === 'login_required' || error.message?.includes('login_required'))) {
+                console.log("login_required error detected in session management, triggering POST logout");
+                this.usePostLogout = true;
+                await this.logout();
+            }
         });
     }
 
@@ -297,15 +346,27 @@ class AuthService {
         }
     }
 
-    async logout() {
+    async logout(usePost = null) {
         const user = await this.getUser();
-        const id_token =  user ? user.id_token : null;
+        const id_token = user ? user.id_token : null;
+        
+        // Determine whether to use POST logout
+        const shouldUsePost = usePost !== null ? usePost : this.usePostLogout;
+        
         try {
-            await this.userManager.signoutRedirect({ id_token_hint: id_token });
+            if (shouldUsePost) {
+                console.log("Logging out using POST method");
+                await this.userManager.signoutPost({ id_token_hint: id_token });
+            } else {
+                console.log("Logging out using GET method (redirect)");
+                await this.userManager.signoutRedirect({ id_token_hint: id_token });
+            }
             sessionStore.clear();
+            this.usePostLogout = false; // Reset the flag after logout
         }
         catch (e) {
             console.error("[logout] Error logging out", e);
+            this.usePostLogout = false; // Reset the flag on error
         }
     }
 
@@ -327,6 +388,11 @@ class AuthService {
     async getIdToken() {
         const user = await this.getUser();
         return user ? user.id_token : null;
+    }
+
+    async getRefreshToken() {
+        const user = await this.getUser();
+        return user ? user.refresh_token : null;
     }
 
     async decodeToken(token) {
