@@ -1,20 +1,32 @@
 package kombit.oidc.config;
 
 import jakarta.validation.constraints.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties(prefix = "config.oidc")
 public class OidcProperties {
 
+    @Autowired(required = false)
+    private ClientRegistrationRepository clientRegistrationRepository;
+
+    private ClientRegistration getOidcRegistration() {
+        if (clientRegistrationRepository == null)
+            throw new IllegalStateException("ClientRegistrationRepository is not initialized.");
+
+        ClientRegistration reg = clientRegistrationRepository.findByRegistrationId("oidc");
+        if (reg == null)
+            throw new IllegalStateException("OIDC registration not found in ClientRegistrationRepository.");
+
+        return reg;
+    }
+
     @NotBlank
     private String registrationId;
-
-    @NotNull private String authorizationEndpoint;
-    @NotNull private String tokenEndpoint;
-    @NotNull private String endSessionEndpoint;
-    private String revokeEndpoint;
 
     @NotBlank private String clientId;
     @NotBlank private String clientSecret;
@@ -29,7 +41,6 @@ public class OidcProperties {
 
     @NotBlank
     private String scope;
-
 
     private String jwtSigningKeystorePath;
     private String jwtSigningKeystorePassword;
@@ -49,17 +60,23 @@ public class OidcProperties {
     public String getRegistrationId() { return registrationId; }
     public void setRegistrationId(String registrationId) { this.registrationId = registrationId; }
 
-    public String getAuthorizationEndpoint() { return authorizationEndpoint; }
-    public void setAuthorizationEndpoint(String authorizationEndpoint) { this.authorizationEndpoint = authorizationEndpoint; }
+    public String getAuthorizationEndpoint() { return getOidcRegistration().getProviderDetails().getAuthorizationUri(); }
 
-    public String getTokenEndpoint() { return tokenEndpoint; }
-    public void setTokenEndpoint(String tokenEndpoint) { this.tokenEndpoint = tokenEndpoint; }
+    public String getTokenEndpoint() { return getOidcRegistration().getProviderDetails().getTokenUri(); }
 
-    public String getEndSessionEndpoint() { return endSessionEndpoint; }
-    public void setEndSessionEndpoint(String endSessionEndpoint) { this.endSessionEndpoint = endSessionEndpoint; }
+    public String getEndSessionEndpoint() {
+        Object val = getOidcRegistration().getProviderDetails()
+            .getConfigurationMetadata()
+            .get("end_session_endpoint");
+        return val != null ? val.toString() : "";
+    }
 
-    public String getRevokeEndpoint() { return revokeEndpoint; }
-    public void setRevokeEndpoint(String revokeEndpoint) { this.revokeEndpoint = revokeEndpoint; }
+    public String getRevokeEndpoint() {
+        Object val = getOidcRegistration().getProviderDetails()
+            .getConfigurationMetadata()
+            .get("revocation_endpoint");
+        return val != null ? val.toString() : "";
+    }
 
     public String getClientId() { return clientId; }
     public void setClientId(String clientId) { this.clientId = clientId; }

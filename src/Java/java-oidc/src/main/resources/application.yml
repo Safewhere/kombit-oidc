@@ -42,10 +42,6 @@ logging:
 config:
   oidc:
     registration-id: oidc
-    authorization-endpoint: ${OIDC_AUTHZ_ENDPOINT:https://komitva322.safewhere.local/runtime/oauth2/authorize.idp}
-    token-endpoint: ${OIDC_TOKEN_ENDPOINT:https://komitva322.safewhere.local/runtime/oauth2/token.idp}
-    end-session-endpoint: ${OIDC_LOGOUT_ENDPOINT:https://komitva322.safewhere.local/runtime/openidconnect/logout.idp}
-    revoke-endpoint: ${OIDC_REVOKE_ENDPOINT:https://komitva322.safewhere.local/runtime/oauth2/revoke.idp}
     redirect-uri: https://localhost:8000/oidc/callback
     client-id: ${OIDC_CLIENT_ID:java-application}
     client-secret: ${OIDC_CLIENT_SECRET:java-secret-key-7890}
