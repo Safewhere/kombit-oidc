@@ -26,7 +26,7 @@ cd to root folder, open powershell and run:
 ```bash
 $env:OIDC_CLIENT_ID = "wpf-application"
 $env:OIDC_CLIENT_SECRET = "secret-key-4567"
-$env:OIDC_ISSUER="https://komitva322.safewhere.local/runtime/oauth2"
+$env:OIDC_ISSUER="https://kombitva322.safewhere.local/runtime/oauth2"
 ```
 ## SSL Configuration
 This project uses HTTPS by default. SSL is configured in `application.properties`:

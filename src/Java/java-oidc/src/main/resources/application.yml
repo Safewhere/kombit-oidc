@@ -14,7 +14,7 @@ spring:
       client:
         provider:
           oidc:
-            issuer-uri: ${OIDC_ISSUER:https://komitva322.safewhere.local/runtime/oauth2}
+            issuer-uri: ${OIDC_ISSUER:https://kombitva322.safewhere.local/runtime/oauth2}
         registration:
           oidc:
             provider: oidc
