@@ -285,20 +285,34 @@ class AuthService {
     }
 
     setupEventListeners() {
+        // Prevent logout loop - only handle explicit user signout, not session changes from silent renewal
         this.userManager.events.addUserSignedOut(async () => {
             console.log("User signed out event triggered.");
-            await this.logout();
+            // Check if this is from an actual logout or from session monitor during renewal
+            const user = await this.userManager.getUser();
+            if (!user || user.expired) {
+                console.log("User session expired or no user found, redirecting to login");
+                // Clear storage and redirect to login page instead of logout endpoint
+                sessionStore.clear();
+                await this.userManager.removeUser();
+                // Redirect to home/login page
+                window.location.href = '/';
+            }
         });
 
         // Handle silent renew errors, especially login_required
         this.userManager.events.addSilentRenewError(async (error) => {
             console.error("Silent renew error:", error);
             
-            // Check if the error is login_required
-            if (error && (error.error === 'login_required' || error.message?.includes('login_required'))) {
-                console.log("login_required error detected in session management, triggering POST logout");
-                this.usePostLogout = true;
-                await this.logout();
+            // Check if the error is login_required or session terminated
+            if (error && (error.error === 'login_required' || error.message?.includes('login_required') || 
+                         error.error === 'interaction_required' || error.message?.includes('interaction_required'))) {
+                console.log("Session expired or interaction required, clearing session and redirecting to login page");
+                // Clear storage and redirect to login instead of triggering logout loop
+                sessionStore.clear();
+                await this.userManager.removeUser();
+                // Redirect to home/login page
+                window.location.href = '/';
             }
         });
     }
@@ -335,9 +349,15 @@ class AuthService {
     async handleCallback() {
         try {
             const user = await this.userManager.signinRedirectCallback();
-            // rebuild the session monitor with the new session state to avoid automatic logout.
             console.log("User signed in successfully: ", user.profile.sub + '|' + user.session_state);
-            this.userManager._sessionMonitor = new SessionMonitor(this.userManager);
+            
+            // Only rebuild session monitor if it doesn't exist yet (initial login)
+            // Don't rebuild on silent renewals to avoid triggering userSignedOut events
+            if (!this.userManager._sessionMonitor) {
+                console.log("Initializing session monitor");
+                this.userManager._sessionMonitor = new SessionMonitor(this.userManager);
+            }
+            
             return user;
         }
         catch (e) {
