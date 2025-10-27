@@ -9,10 +9,17 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <Compile Remove="logs\**" />
-	  <EmbeddedResource Remove="logs\**" />
-	  <None Remove="logs\**" />
-	  <Page Remove="logs\**" />
+		<Compile Remove="logs\**" />
+		<EmbeddedResource Remove="logs\**" />
+		<None Remove="logs\**" />
+		<Page Remove="logs\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Copy HTML callback page to output -->
+		<None Update="callback-success.html">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 	</ItemGroup>
 
 	<ItemGroup>

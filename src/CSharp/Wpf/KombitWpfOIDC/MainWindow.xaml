@@ -159,14 +159,26 @@
 
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Border Width="28" Height="28" CornerRadius="8" Background="#223266"/>
-                                <TextBlock  Text="Hi!" Foreground="#ccd7ff" FontSize="18" Margin="10,1,0,0"/>
+                                <TextBlock Text="Hi!" Foreground="#ccd7ff" FontSize="18" Margin="10,1,0,0"/>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button x:Name="Logout" Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                Click="BtnLogout_Click">
+                                <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                Click="ReAuth">
                                     <StackPanel Orientation="Horizontal">
-                                        <fa:IconImage Icon="SignOut" Style="{StaticResource socialIcon}"/>
+                                        <TextBlock Text="Re-authenticate" Foreground="#f2f2f2" FontSize="13"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                    Click="ForceAuth">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Force Authentication" Foreground="#f2f2f2" FontSize="13"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                    Click="PassiveAuth">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Passive Authentication" Foreground="#f2f2f2" FontSize="13"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>

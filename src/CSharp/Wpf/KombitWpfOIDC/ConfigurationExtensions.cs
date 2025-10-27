@@ -16,6 +16,9 @@ namespace KombitWpfOIDC
         public static string IdTokenDecryptionCertPath => ConfigurationManager.AppSettings["IdTokenDecryptionCertPath"] ?? string.Empty;
         public static string IdTokenDecryptionCertPassword => ConfigurationManager.AppSettings["IdTokenDecryptionCertPassword"] ?? string.Empty;
         public static string AuthorizationEndpointMethod => ConfigurationManager.AppSettings["AuthorizationEndpointMethod"] ?? string.Empty;
+        public static string CustomScheme => ConfigurationManager.AppSettings["CustomScheme"] ?? "wpfoidc";
+        public static bool UseCustomScheme => (ConfigurationManager.AppSettings["UseCustomScheme"] ?? "false").Equals("true", StringComparison.OrdinalIgnoreCase);
+        public static string CustomSchemeRedirectUri => $"{CustomScheme}://callback";
 
         public static async Task<DiscoveryDocumentResponse> GetDiscoveryAsync()
         {
@@ -50,7 +53,9 @@ namespace KombitWpfOIDC
         public static string TokenEndpoint => RequireDisco().TokenEndpoint;
         public static string EndSessionEndpoint => RequireDisco().EndSessionEndpoint;
         public static string RevokeEndpoint => RequireDisco().RevocationEndpoint;
-        public static string LoopbackRedirect => string.Format("http://{0}:{1}/", IPAddress.Loopback, Port);
+        public static string LoopbackRedirect => UseCustomScheme 
+    ? CustomSchemeRedirectUri 
+            : string.Format("http://{0}:{1}/", IPAddress.Loopback, Port);
     }
 
 }

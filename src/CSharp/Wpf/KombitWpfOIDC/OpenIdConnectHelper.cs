@@ -1,18 +1,14 @@
-﻿using System.IdentityModel.Tokens.Jwt;
-using System.Net.Http;
+﻿using System.Net.Http;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using KombitWpfOIDC;
-using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 namespace KombitWpfOIDC
 {
-    public class OpenIdConnectHelper
+    public static class OpenIdConnectHelper
     {
         public static string? GetJwtHeader(string? token)
         {
@@ -54,7 +50,7 @@ namespace KombitWpfOIDC
             catch { return null; }
         }
 
-        public static async Task<(string Url, string CodeVerifier, string State)> GenerateReauthenticateUri(string? acrValues = null, int? maxAgeSec = null)
+        public static async Task<(string Url, string CodeVerifier, string State)> GenerateReauthenticateUri(string? acrValues = null, int? maxAgeSec = null, bool forceLogin = false, bool isPassive = false)
         {
             Log.Debug("GenerateReauthenticateUri(acr={Acr}, max_age={Max})", acrValues, maxAgeSec);
             string state = RandomDataBase64url(32);
@@ -80,6 +76,11 @@ namespace KombitWpfOIDC
             if (maxAgeSec > 0)
                 parameters.Add("max_age", maxAgeSec.ToString());
 
+            if (forceLogin)
+                parameters.Add("prompt", "login");
+            else if (isPassive)
+                parameters.Add("prompt", "none");
+
             LoggerConfig.InfoAsJson("Parameters", parameters);
 
             if (ConfigurationExtensions.AuthorizationEndpointMethod?.ToUpper() == "POST")
@@ -100,70 +101,6 @@ namespace KombitWpfOIDC
             }
         }
 
-        public static X509Certificate2? GetDecryptionCertificate()
-        {
-            var pfxPath = ConfigurationExtensions.IdTokenDecryptionCertPath;
-            var pfxPassword = ConfigurationExtensions.IdTokenDecryptionCertPassword;
-            if (string.IsNullOrWhiteSpace(pfxPath)) return null;
-
-            if (!System.IO.File.Exists(pfxPath))
-                throw new InvalidOperationException($"PFX not found: {pfxPath}");
-
-            var flags =
-                X509KeyStorageFlags.MachineKeySet |
-                X509KeyStorageFlags.PersistKeySet |
-                X509KeyStorageFlags.Exportable;
-
-            var cert = new X509Certificate2(pfxPath, pfxPassword ?? string.Empty, flags);
-
-            if (!cert.HasPrivateKey)
-                throw new InvalidOperationException("Certificate does not contain a private key. Decryption requires private key.");
-            return cert;
-        }
-        public static string DecryptToken(string encryptedToken, EncryptingCredentials decryptionCredentials)
-        {
-            if (string.IsNullOrWhiteSpace(encryptedToken))
-                throw new ArgumentNullException(nameof(encryptedToken));
-            if (decryptionCredentials == null)
-                throw new ArgumentNullException(nameof(decryptionCredentials));
-            if (decryptionCredentials.Key == null)
-                throw new ArgumentException("EncryptingCredentials must contain a valid SecurityKey.", nameof(decryptionCredentials));
-
-            try
-            {
-                var handler = new JsonWebTokenHandler { MapInboundClaims = false };
-                var cpf = decryptionCredentials.Key.CryptoProviderFactory ?? new CryptoProviderFactory();
-
-                var tvp = new TokenValidationParameters
-                {
-                    ValidateIssuer = false,
-                    ValidateAudience = false,
-                    ValidateLifetime = false,
-                    RequireSignedTokens = false,
-                    TokenDecryptionKeys = new[] { decryptionCredentials.Key },
-                    CryptoProviderFactory = cpf
-                };
-
-                var result = handler.ValidateToken(encryptedToken, tvp);
-                if (!result.IsValid || result.SecurityToken is not JsonWebToken jwt)
-                {
-                    var errorMsg = result.Exception?.Message ?? "Unknown validation error";
-                    Log.Error("Token decryption validation failed: {Error}", errorMsg);
-                    throw new SecurityTokenDecryptionFailedException("Failed to decrypt the JWE.", result.Exception);
-                }
-
-                return jwt.EncodedToken;
-            }
-            catch (SecurityTokenDecryptionFailedException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to decrypt the JWT token");
-                throw new SecurityTokenDecryptionFailedException("Failed to decrypt the JWT token.", ex);
-            }
-        }
         public static SecurityKey GetContentEncryptionKey(
             SecurityKey keyEncryptionKey,
             string keyManagementAlgorithm,
