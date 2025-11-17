@@ -29,7 +29,6 @@ namespace KombitWpfOIDC
             InitializeComponent();
             InitializeOidcClient();
             DataContext = this;
-            this.Closing += MainWindow_Closing;
         }
 
         private void InitializeOidcClient()
@@ -235,18 +234,6 @@ namespace KombitWpfOIDC
                     disposableBrowser.Dispose();
                     Log.Information("Browser instance disposed");
                 }
-            }
-        }
-
-        private void MainWindow_Closing(object? sender, CancelEventArgs e)
-        {
-            try
-            {
-                DoLogout();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Logout failed");
             }
         }
 
