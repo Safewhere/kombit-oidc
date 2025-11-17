@@ -9,15 +9,17 @@ namespace KombitWpfOIDC
     {
         private static DiscoveryDocumentResponse? _disco;
         private static readonly HttpClient _http = new();
+        
+        // Configuration properties
         public static string ClaimsIssuer => (ConfigurationManager.AppSettings["ClaimsIssuer"] ?? string.Empty).TrimEnd('/');
         public static string ClientId => ConfigurationManager.AppSettings["ClientId"] ?? string.Empty;
         public static string Port => ConfigurationManager.AppSettings["Port"] ?? string.Empty;
         public static string Scope => ConfigurationManager.AppSettings["Scope"] ?? string.Empty;
-        public static string IdTokenDecryptionCertPath => ConfigurationManager.AppSettings["IdTokenDecryptionCertPath"] ?? string.Empty;
-        public static string IdTokenDecryptionCertPassword => ConfigurationManager.AppSettings["IdTokenDecryptionCertPassword"] ?? string.Empty;
         public static string AuthorizationEndpointMethod => ConfigurationManager.AppSettings["AuthorizationEndpointMethod"] ?? string.Empty;
-        public static string CustomScheme => ConfigurationManager.AppSettings["CustomScheme"] ?? "wpfoidc";
         public static bool UseCustomScheme => (ConfigurationManager.AppSettings["UseCustomScheme"] ?? "false").Equals("true", StringComparison.OrdinalIgnoreCase);
+        
+        // Custom scheme is hardcoded to "wpfoidc"
+        private const string CustomScheme = "wpfoidc";
         public static string CustomSchemeRedirectUri => $"{CustomScheme}://callback";
 
         public static async Task<DiscoveryDocumentResponse> GetDiscoveryAsync()
@@ -42,6 +44,7 @@ namespace KombitWpfOIDC
             _disco = disco;
             return disco;
         }
+        
         private static DiscoveryDocumentResponse RequireDisco()
         {
             if (_disco == null)
@@ -54,8 +57,7 @@ namespace KombitWpfOIDC
         public static string EndSessionEndpoint => RequireDisco().EndSessionEndpoint;
         public static string RevokeEndpoint => RequireDisco().RevocationEndpoint;
         public static string LoopbackRedirect => UseCustomScheme 
-    ? CustomSchemeRedirectUri 
+            ? CustomSchemeRedirectUri 
             : string.Format("http://{0}:{1}/", IPAddress.Loopback, Port);
     }
-
 }

@@ -96,7 +96,7 @@ namespace KombitWpfOIDC
             else
             {
                 return @"
-                <html><head><meta http-equiv='refresh' content='5;url=https://google.com'></head><body style='font-family:sans-serif;background:#31407b;color:#fff;text-align:center;padding:40px'>
+                <html><body style='font-family:sans-serif;background:#31407b;color:#fff;text-align:center;padding:40px'>
                   <h2>OK</h2>
                   <p>You can close this window.</p>
                   <script>setTimeout(()=>window.close(),2000);</script>

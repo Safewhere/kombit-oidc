@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using IdentityModel.Client;
 using IdentityModel.OidcClient;
 using IdentityModel.OidcClient.Browser;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 namespace KombitWpfOIDC
@@ -40,7 +41,7 @@ namespace KombitWpfOIDC
                 Scope = ConfigurationExtensions.Scope,
                 RedirectUri = ConfigurationExtensions.LoopbackRedirect,
                 PostLogoutRedirectUri = ConfigurationExtensions.LoopbackRedirect,
-                Browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser(ConfigurationExtensions.CustomScheme) : new SystemBrowser(),
+                Browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser() : new SystemBrowser(),
                 Policy = new Policy
                 {
                     Discovery = new DiscoveryPolicy()
@@ -50,6 +51,8 @@ namespace KombitWpfOIDC
                     }
                 }
             };
+
+            ClientId = ConfigurationExtensions.ClientId;
 
             LoggerConfig.InfoAsJson("OIDC client options configured", _options);
         }
@@ -96,7 +99,7 @@ namespace KombitWpfOIDC
             IBrowser? browser = null;
             try
             {
-                browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser(ConfigurationExtensions.CustomScheme) : new SystemBrowser();
+                browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser() : new SystemBrowser();
                 var browserResult = await browser.InvokeAsync(new BrowserOptions(authorizeUrl.Url, ConfigurationExtensions.LoopbackRedirect));
 
                 if (browserResult.ResultType != BrowserResultType.Success)
@@ -210,6 +213,7 @@ namespace KombitWpfOIDC
                     };
                     var principal = handler.ValidateToken(idToken, tvp, out _);
                     IsAuthenticated = true;
+                    Subject = principal.FindFirst("sub")?.Value ?? "";
                 }
                 catch (Exception ex)
                 {
@@ -371,6 +375,20 @@ namespace KombitWpfOIDC
         {
             get => _isAuthenticated;
             set { _isAuthenticated = value; OnPropertyChanged(); }
+        }
+
+        private string _clientId;
+        public string ClientId
+        {
+            get => _clientId;
+            set { _clientId = value; OnPropertyChanged();  }
+        }
+
+        private string _subject;
+        public string Subject
+        {
+            get => _subject;
+            set { _subject = value; OnPropertyChanged(); }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
