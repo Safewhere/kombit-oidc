@@ -85,11 +85,9 @@ namespace KombitWpfOIDC
 
             if (ConfigurationExtensions.AuthorizationEndpointMethod?.ToUpper() == "POST")
             {
-                using var client = new HttpClient();
-                var content = new FormUrlEncodedContent(parameters);
-                var response = await client.PostAsync(ConfigurationExtensions.AuthorizationEndpoint, content);
-                string url = response.Headers.Location?.ToString() ?? ConfigurationExtensions.AuthorizationEndpoint;
-                Log.Debug("Auth method POST, Location: {Url}", url);
+                // For native apps, POST means creating an HTML form that auto-submits in the browser
+                string url = GenerateAutoPostHtml(ConfigurationExtensions.AuthorizationEndpoint, parameters);
+                Log.Debug("Auth method POST, generated auto-post HTML");
                 return (url, codeVerifier, state);
             }
             else
@@ -99,6 +97,40 @@ namespace KombitWpfOIDC
                 Log.Debug("Auth method GET, URL: {Url}", url);
                 return (url, codeVerifier, state);
             }
+        }
+
+        /// <summary>
+        /// Generates a data URI containing HTML with an auto-submitting POST form
+        /// </summary>
+        private static string GenerateAutoPostHtml(string actionUrl, Dictionary<string, string> parameters)
+        {
+            var formFields = new StringBuilder();
+            foreach (var param in parameters)
+            {
+                formFields.AppendLine($"    <input type=\"hidden\" name=\"{System.Web.HttpUtility.HtmlEncode(param.Key)}\" value=\"{System.Web.HttpUtility.HtmlEncode(param.Value)}\" />");
+            }
+
+            var html = $@"<!DOCTYPE html>
+<html>
+<head>
+    <title>Redirecting...</title>
+</head>
+<body onload=""document.forms[0].submit()"">
+    <form method=""POST"" action=""{System.Web.HttpUtility.HtmlEncode(actionUrl)}"">
+{formFields}
+        <noscript>
+            <p>JavaScript is disabled. Please click the button below to continue.</p>
+            <input type=""submit"" value=""Continue"" />
+        </noscript>
+    </form>
+    <p>Redirecting to authentication...</p>
+</body>
+</html>";
+
+            // Convert HTML to data URI
+            var htmlBytes = Encoding.UTF8.GetBytes(html);
+            var base64Html = Convert.ToBase64String(htmlBytes);
+            return $"data:text/html;base64,{base64Html}";
         }
 
         public static SecurityKey GetContentEncryptionKey(
