@@ -151,55 +151,32 @@
                     </Border>
 
                     <!-- HEADER -->
-                    <Border Grid.Column="1" CornerRadius="14" Padding="18" Margin="15,15,0,0">
+                    <Border Grid.Column="1" CornerRadius="14" Padding="18" Margin="15,15,15,0">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             
-                            <!-- User Info Row -->
-                            <Grid Grid.Row="0">
+                            <!-- Row 1: User Info and Action Buttons -->
+                            <Grid Grid.Row="0" Margin="0,0,0,15">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition/>
                                     <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Border Width="28" Height="28" CornerRadius="8" Background="#223266"/>
-                                    <TextBlock Text="{Binding Subject}" Foreground="#ccd7ff" FontSize="18" Margin="10,1,0,0"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                    Click="ReAuth">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Re-authenticate" Foreground="#f2f2f2" FontSize="13"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                        Click="ForceAuth">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Force Authentication" Foreground="#f2f2f2" FontSize="13"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                        Click="PassiveAuth">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Passive Authentication" Foreground="#f2f2f2" FontSize="13"/>
-                                        </StackPanel>
-                                    </Button>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Authentication Parameters Row -->
-                            <Grid Grid.Row="1" Margin="0,15,0,0">
-                                <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <!-- User Info -->
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Width="28" Height="28" CornerRadius="8" Background="#223266"/>
+                                    <TextBlock Text="{Binding Subject}" Foreground="#ccd7ff" FontSize="18" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                            </Grid>
+
+                            <!-- Row 2: Authentication Parameters -->
+                            <Grid Grid.Row="1">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                                     <StackPanel Margin="0,0,20,0">
                                         <TextBlock Text="Assurance Level" Margin="0,0,0,6" Foreground="#ccd7ff" FontWeight="SemiBold" FontSize="12"/>
                                         <Border CornerRadius="8" Background="#FFFFFF" Padding="0" MinWidth="280">
@@ -224,6 +201,22 @@
                                                      Text="{Binding ElementName=MaxAgeBox, Path=Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                      local:NumberOnlyBehavior.IsEnabled="True" FontSize="13"/>
                                         </Border>
+                                    </StackPanel>
+
+                                    <!-- Action Buttons -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" HorizontalAlignment="Left">
+                                        <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                            Click="ReAuth" Margin="5,0">
+                                            <TextBlock Text="Re-authenticate" Foreground="#f2f2f2" FontSize="13"/>
+                                        </Button>
+                                        <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                            Click="ForceAuth" Margin="5,0">
+                                            <TextBlock Text="Force Authentication" Foreground="#f2f2f2" FontSize="13"/>
+                                        </Button>
+                                        <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                            Click="PassiveAuth" Margin="5,0">
+                                            <TextBlock Text="Passive Authentication" Foreground="#f2f2f2" FontSize="13"/>
+                                        </Button>
                                     </StackPanel>
                                 </StackPanel>
                             </Grid>

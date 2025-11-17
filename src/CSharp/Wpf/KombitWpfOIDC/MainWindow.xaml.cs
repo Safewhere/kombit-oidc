@@ -211,8 +211,18 @@ namespace KombitWpfOIDC
                         ClockSkew = TimeSpan.FromMinutes(2)
                     };
                     var principal = handler.ValidateToken(idToken, tvp, out _);
+                    
+                    // Extract subject claim
+                    var subjectClaim = principal.FindFirst("sub")?.Value 
+                                    ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                                    ?? "Unknown";
+                    
+                    Log.Information("Setting Subject to: {Subject}", subjectClaim);
+                    
                     IsAuthenticated = true;
-                    Subject = principal.FindFirst("sub")?.Value ?? "";
+                    Subject = subjectClaim;
+                    
+                    Log.Information("Subject property set. Current value: {Subject}, IsAuthenticated: {IsAuthenticated}", Subject, IsAuthenticated);
                 }
                 catch (Exception ex)
                 {
@@ -364,14 +374,14 @@ namespace KombitWpfOIDC
             set { _isAuthenticated = value; OnPropertyChanged(); }
         }
 
-        private string _clientId;
+        private string _clientId = string.Empty;
         public string ClientId
         {
             get => _clientId;
             set { _clientId = value; OnPropertyChanged();  }
         }
 
-        private string _subject;
+        private string _subject = string.Empty;
         public string Subject
         {
             get => _subject;
