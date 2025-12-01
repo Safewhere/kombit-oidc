@@ -1,4 +1,5 @@
-﻿using System.Net.Http;
+﻿using System.IO;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -85,9 +86,9 @@ namespace KombitWpfOIDC
 
             if (ConfigurationExtensions.AuthorizationEndpointMethod?.ToUpper() == "POST")
             {
-                // For native apps, POST means creating an HTML form that auto-submits in the browser
-                string url = GenerateAutoPostHtml(ConfigurationExtensions.AuthorizationEndpoint, parameters);
-                Log.Debug("Auth method POST, generated auto-post HTML");
+                // For desktop apps with POST, create a temporary HTML file that auto-submits
+                string url = GenerateAutoPostHtmlFile(ConfigurationExtensions.AuthorizationEndpoint, parameters);
+                Log.Debug("Auth method POST, generated auto-post HTML file: {Url}", url);
                 return (url, codeVerifier, state);
             }
             else
@@ -100,9 +101,10 @@ namespace KombitWpfOIDC
         }
 
         /// <summary>
-        /// Generates a data URI containing HTML with an auto-submitting POST form
+        /// Generates a temporary HTML file with an auto-submitting POST form
+        /// Returns the file:// URL to the temporary file
         /// </summary>
-        private static string GenerateAutoPostHtml(string actionUrl, Dictionary<string, string> parameters)
+        private static string GenerateAutoPostHtmlFile(string actionUrl, Dictionary<string, string> parameters)
         {
             var formFields = new StringBuilder();
             foreach (var param in parameters)
@@ -113,24 +115,73 @@ namespace KombitWpfOIDC
             var html = $@"<!DOCTYPE html>
 <html>
 <head>
-    <title>Redirecting...</title>
+    <title>Redirecting to Authentication</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }}
+        .container {{
+            text-align: center;
+        }}
+        .spinner {{
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        button {{
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }}
+        button:hover {{
+            background: #f0f0f0;
+        }}
+    </style>
 </head>
 <body onload=""document.forms[0].submit()"">
-    <form method=""POST"" action=""{System.Web.HttpUtility.HtmlEncode(actionUrl)}"">
+    <div class=""container"">
+        <div class=""spinner""></div>
+        <h2>Redirecting to Authentication...</h2>
+        <p>Please wait while we redirect you to the login page.</p>
+        <form method=""POST"" action=""{System.Web.HttpUtility.HtmlEncode(actionUrl)}"">
 {formFields}
-        <noscript>
-            <p>JavaScript is disabled. Please click the button below to continue.</p>
-            <input type=""submit"" value=""Continue"" />
-        </noscript>
-    </form>
-    <p>Redirecting to authentication...</p>
+            <noscript>
+                <p style=""color: #ffcccc;"">JavaScript is disabled. Please click the button below to continue.</p>
+            </noscript>
+            <button type=""submit"">Continue to Login</button>
+        </form>
+    </div>
 </body>
 </html>";
 
-            // Convert HTML to data URI
-            var htmlBytes = Encoding.UTF8.GetBytes(html);
-            var base64Html = Convert.ToBase64String(htmlBytes);
-            return $"data:text/html;base64,{base64Html}";
+            // Create a temporary file
+            var tempPath = Path.Combine(Path.GetTempPath(), $"oidc_auth_{Guid.NewGuid():N}.html");
+            File.WriteAllText(tempPath, html, Encoding.UTF8);
+            
+            Log.Debug("Created temporary HTML file: {Path}", tempPath);
+            
+            // Return as file:// URL
+            return new Uri(tempPath).AbsoluteUri;
         }
 
         public static SecurityKey GetContentEncryptionKey(
