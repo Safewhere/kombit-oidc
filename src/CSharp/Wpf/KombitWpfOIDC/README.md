@@ -70,7 +70,7 @@ The application is configured via the `App.config` file:
 
 ## Provisioning Data
 
-When configuring the OIDC connection in your identity provider, use the appropriate redirect URI:
+When configuring the OIDC connection in your Identify tenant, use the appropriate redirect URI:
 
 - **Custom Scheme**: `wpfoidc://callback`
 - **HTTP Loopback**: `http://127.0.0.1:44038/` (or your configured port)
@@ -117,13 +117,6 @@ After login, you can test different authentication scenarios:
 - **ID Token**: View raw token, header, and payload (decoded JWT)
 - **Access Token**: View raw token, header, and payload (decoded JWT)
 
-## Logout
-
-The application automatically performs logout when closing, which includes:
-- Ending the session with the OIDC provider
-- Clearing local token storage
-- Resetting the UI state
-
 # Architecture
 
 ## Key Components
@@ -138,43 +131,3 @@ The application automatically performs logout when closing, which includes:
 | `IpcCallbackHandler.cs` | Inter-process communication |
 | `OpenIdConnectHelper.cs` | PKCE, JWT parsing, URL generation |
 | `TokenInfo.cs` | Token storage |
-
-## PKCE Flow
-
-The application implements OAuth 2.0 PKCE (Proof Key for Code Exchange):
-
-1. Generate random code verifier (43 characters)
-2. Create code challenge (SHA-256 hash of verifier)
-3. Send code challenge in authorization request
-4. Send code verifier in token request for validation
-
-# Troubleshooting
-
-## Custom Scheme Not Working
-
-1. Check if protocol is registered: `HKEY_CURRENT_USER\Software\Classes\wpfoidc`
-2. Restart the application
-3. Try running as administrator
-4. Switch to HTTP loopback: set `UseCustomScheme=false`
-
-## HTTP Loopback Access Denied
-
-1. Run as administrator, or
-2. Grant URL reservation:
-   ```cmd
-   netsh http add urlacl url=http://127.0.0.1:44038/ user=YOUR_USERNAME
-   ```
-
-## Token Validation Failed
-
-1. Verify `ClaimsIssuer` matches the `iss` claim
-2. Verify `ClientId` matches the `aud` claim
-3. Check system clock synchronization
-4. Ensure JWKS endpoint is accessible
-
-## Discovery Error
-
-1. Verify `ClaimsIssuer` URL is correct
-2. Check network accessibility
-3. Verify HTTPS certificate
-4. Test discovery endpoint: `{ClaimsIssuer}/.well-known/openid-configuration`
