@@ -364,6 +364,40 @@ namespace KombitWpfOIDC
                 TxtLog.Text = token;
                 TxtHeader.Text = decoded.Value.HeaderJson;
                 TxtPayload.Text = decoded.Value.PayloadJson;
+                
+                // Reset copy button text when token changes
+                ResetCopyButtonText();
+            }
+        }
+
+        private void CopyToken_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(TxtLog.Text))
+                {
+                    Clipboard.SetText(TxtLog.Text);
+                    Log.Information("Token copied to clipboard");
+                    
+                    // Update button text to "Copied"
+                    BtnCopyToken.Content = "Copied";
+                }
+                else
+                {
+                    Log.Warning("No token content to copy");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to copy token to clipboard");
+            }
+        }
+
+        private void ResetCopyButtonText()
+        {
+            if (BtnCopyToken != null && BtnCopyToken.Content?.ToString() == "Copied")
+            {
+                BtnCopyToken.Content = "Copy";
             }
         }
 

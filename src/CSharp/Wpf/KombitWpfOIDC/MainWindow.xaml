@@ -228,8 +228,39 @@
                     <Border Grid.Column="1" Grid.Row="1" CornerRadius="20" Margin="20,0,20,20" >
                         <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="True"  Padding="4,0,0,0" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Orientation="Vertical">
+                                <!-- TOKEN Section -->
                                 <StackPanel Margin="0 0 0 20">
-                                    <TextBlock Foreground="#ccd7ff" FontSize="13" Text="TOKEN" Margin="0 0 0 7" FontWeight="DemiBold"/>
+                                    <Grid Margin="0 0 0 7">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Foreground="#ccd7ff" FontSize="13" Text="TOKEN" FontWeight="DemiBold"/>
+                                        <Button x:Name="BtnCopyToken" Grid.Column="1" Content="Copy" Foreground="#f2f2f2" FontSize="11" 
+                                                Background="#5b60c4" BorderThickness="0" Padding="10,5" 
+                                                Cursor="Hand" Click="CopyToken_Click"
+                                                ToolTip="Copy token to clipboard">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}" 
+                                                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#7580d4"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
                                     <Border CornerRadius="10" Background="#243771" Padding="10">
                                         <TextBlock x:Name="TxtLog" TextWrapping="Wrap" Foreground="#ccd7ff" FontSize="13"/>
                                     </Border>
