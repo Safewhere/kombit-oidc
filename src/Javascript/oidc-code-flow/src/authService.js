@@ -281,6 +281,7 @@ class AuthService {
     constructor() {
         this.userManager = new CustomUserManager(settings);
         this.usePostLogout = false; // Flag to track if POST logout should be used
+        this.isHandlingSessionExpiry = false; // Flag to prevent multiple simultaneous session expiry handling
         this.setupEventListeners();
     }
 
@@ -288,31 +289,63 @@ class AuthService {
         // Prevent logout loop - only handle explicit user signout, not session changes from silent renewal
         this.userManager.events.addUserSignedOut(async () => {
             console.log("User signed out event triggered.");
-            // Check if this is from an actual logout or from session monitor during renewal
-            const user = await this.userManager.getUser();
-            if (!user || user.expired) {
-                console.log("User session expired or no user found, redirecting to login");
-                // Clear storage and redirect to login page instead of logout endpoint
-                sessionStore.clear();
-                await this.userManager.removeUser();
-                // Redirect to home/login page
-                window.location.href = '/';
+            
+            // If we're already handling session expiry, ignore this event
+            if (this.isHandlingSessionExpiry) {
+                console.log("Already handling session expiry, ignoring userSignedOut event");
+                return;
             }
+            
+            // Get user to check current state
+            const user = await this.userManager.getUser();
+            console.log("User signed out - User state:", user ? "exists" : "null", user?.expired ? "expired" : "valid");
+            
+            // When session monitor detects user signed out (e.g., from another SP logout),
+            // we should clear the local session and redirect to login page
+            // This event fires when the IDP session is terminated externally
+            console.log("IDP session terminated, clearing local session and redirecting to login");
+            this.isHandlingSessionExpiry = true;
+            
+            // Stop automatic silent renew to prevent any pending renewal attempts
+            this.userManager.stopSilentRenew();
+            
+            // Clear storage and remove user
+            sessionStore.clear();
+            await this.userManager.removeUser();
+            
+            console.log("Session cleared, redirecting to home page");
+            // Redirect to home/login page
+            window.location.href = '/';
         });
 
         // Handle silent renew errors, especially login_required
         this.userManager.events.addSilentRenewError(async (error) => {
             console.error("Silent renew error:", error);
             
+            // If we're already handling session expiry, ignore this event
+            if (this.isHandlingSessionExpiry) {
+                console.log("Already handling session expiry, ignoring silent renew error");
+                return;
+            }
+            
             // Check if the error is login_required or session terminated
             if (error && (error.error === 'login_required' || error.message?.includes('login_required') || 
                          error.error === 'interaction_required' || error.message?.includes('interaction_required'))) {
-                console.log("Session expired or interaction required, clearing session and redirecting to login page");
-                // Clear storage and redirect to login instead of triggering logout loop
+                console.log("Session expired (login_required), clearing session and redirecting to login page");
+                
+                this.isHandlingSessionExpiry = true;
+                
+                // Stop automatic silent renew immediately to prevent any further attempts
+                this.userManager.stopSilentRenew();
+                
+                // Clear storage and user data
                 sessionStore.clear();
                 await this.userManager.removeUser();
-                // Redirect to home/login page
-                window.location.href = '/';
+                
+                // Small delay to ensure all cleanup is complete before redirect
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 100);
             }
         });
     }
