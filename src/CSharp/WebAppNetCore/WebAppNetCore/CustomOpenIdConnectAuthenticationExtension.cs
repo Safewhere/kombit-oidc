@@ -194,7 +194,14 @@ namespace WebAppNetCore
 
                     idToken = tokenResponse.GetProperty("id_token").GetString();
                     accessToken = tokenResponse.GetProperty("access_token").GetString();
-                    sessionState = tokenResponse.GetProperty("session_state").GetString();
+
+                    // Note that when "Session management" is disabled, there is no "session_state" in the token response
+                    sessionState = string.Empty;
+                    if (tokenResponse.TryGetProperty("session_state", out JsonElement sessionStateElement))
+                    {
+                        sessionState = sessionStateElement.GetString() ?? string.Empty;
+                    }
+
                     // Read the Id token header to determine if it is encrypted
                     if (!string.IsNullOrEmpty(idToken))
                     {
