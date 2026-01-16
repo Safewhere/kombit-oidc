@@ -33,6 +33,13 @@ public class OpenIdCryptoService {
 
     @PostConstruct
     public void init() throws Exception {
+        // Skip initialization if keystore paths are not configured
+        if (cfg.jwtSigningKeystorePath() == null || cfg.jwtSigningKeystorePath().isEmpty()) {
+            return;
+        }
+        if (cfg.idTokenKeystorePath() == null || cfg.idTokenKeystorePath().isEmpty()) {
+            return;
+        }
 
         KeyStore verifyKs = KeyStore.getInstance("PKCS12");
         try (FileInputStream fis = new FileInputStream(cfg.jwtSigningKeystorePath())) {

@@ -9,17 +9,6 @@ spring:
   application:
     name: kombit-oidc
 
-  security:
-    oauth2:
-      client:
-        provider:
-          oidc:
-            issuer-uri: ${OIDC_ISSUER:https://kombitva322.safewhere.local/runtime/oauth2}
-        registration:
-          oidc:
-            provider: oidc
-            client-id: ${OIDC_CLIENT_ID}
-            client-secret: ${OIDC_CLIENT_SECRET}
 management:
   endpoints:
     web:
@@ -42,13 +31,15 @@ logging:
 config:
   oidc:
     registration-id: oidc
+    issuer-uri: https://kombitdev.safewhere.local/runtime/oauth2
+    client-id: https://localhost:8000
+    client-secret: secret-key-4567
     redirect-uri: https://localhost:8000/oidc/callback
-    client-id: ${OIDC_CLIENT_ID:java-application}
-    client-secret: ${OIDC_CLIENT_SECRET:java-secret-key-7890}
-    token-auth-method: ${OIDC_TOKEN_AUTH_METHOD:client_secret_post}
-    use-pkce: ${OIDC_USE_PKCE:true}
-    authorization-endpoint-method": ${OIDC_AUTH_ENDPOINT_METHOD:POST},
-    scope: ${OIDC_SCOPE:openid}
+    scope: openid
+    token-auth-method: client_secret_post
+    use-pkce: true
+    authorization-endpoint-method: POST
+    # Optional: Path to PKCS12 (.p12) file for certificate-based authentication (private_key_jwt)
     jwt-signing-keystore-path: ""
     jwt-signing-keystore-password: ""
     id-token-keystore-path: ""

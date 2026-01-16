@@ -1,35 +1,37 @@
 package kombit.oidc.config;
 
 import jakarta.validation.constraints.*;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+
+import javax.net.ssl.*;
+import java.security.cert.X509Certificate;
+
+import jakarta.annotation.PostConstruct;
+import java.util.Map;
 
 @Validated
 @ConfigurationProperties(prefix = "config.oidc")
 public class OidcProperties {
 
-    @Autowired(required = false)
-    private ClientRegistrationRepository clientRegistrationRepository;
-
-    private ClientRegistration getOidcRegistration() {
-        if (clientRegistrationRepository == null)
-            throw new IllegalStateException("ClientRegistrationRepository is not initialized.");
-
-        ClientRegistration reg = clientRegistrationRepository.findByRegistrationId("oidc");
-        if (reg == null)
-            throw new IllegalStateException("OIDC registration not found in ClientRegistrationRepository.");
-
-        return reg;
-    }
-
     @NotBlank
     private String registrationId;
 
-    @NotBlank private String clientId;
-    @NotBlank private String clientSecret;
+    @NotBlank
+    private String issuerUri;
+
+    private String authorizationEndpoint;
+    private String tokenEndpoint;
+    private String endSessionEndpoint;
+    private String revokeEndpoint;
+
+    @NotBlank
+    private String clientId;
+
+    @NotBlank
+    private String clientSecret;
 
     @org.jetbrains.annotations.NotNull
     private TokenAuthMethod tokenAuthMethod = TokenAuthMethod.CLIENT_SECRET_POST;
@@ -60,22 +62,75 @@ public class OidcProperties {
     public String getRegistrationId() { return registrationId; }
     public void setRegistrationId(String registrationId) { this.registrationId = registrationId; }
 
-    public String getAuthorizationEndpoint() { return getOidcRegistration().getProviderDetails().getAuthorizationUri(); }
+    public String getIssuerUri() { return issuerUri; }
+    public void setIssuerUri(String issuerUri) { this.issuerUri = issuerUri; }
 
-    public String getTokenEndpoint() { return getOidcRegistration().getProviderDetails().getTokenUri(); }
+    @PostConstruct
+    public void loadOidcMetadata() {
+        if (issuerUri == null || issuerUri.isEmpty()) {
+            return;
+        }
 
-    public String getEndSessionEndpoint() {
-        Object val = getOidcRegistration().getProviderDetails()
-            .getConfigurationMetadata()
-            .get("end_session_endpoint");
-        return val != null ? val.toString() : "";
+        try {
+            String metadataUrl = issuerUri + "/.well-known/openid-configuration";
+            
+            // Create RestTemplate with SSL verification disabled for development
+            RestTemplate restTemplate = createInsecureRestTemplate();
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Object> metadata = restTemplate.getForObject(metadataUrl, Map.class);
+
+            if (metadata != null) {
+                authorizationEndpoint = (String) metadata.get("authorization_endpoint");
+                tokenEndpoint = (String) metadata.get("token_endpoint");
+                endSessionEndpoint = (String) metadata.get("end_session_endpoint");
+                revokeEndpoint = (String) metadata.get("revocation_endpoint");
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load OIDC metadata from " + issuerUri, e);
+        }
     }
 
-    public String getRevokeEndpoint() {
-        Object val = getOidcRegistration().getProviderDetails()
-            .getConfigurationMetadata()
-            .get("revocation_endpoint");
-        return val != null ? val.toString() : "";
+    private RestTemplate createInsecureRestTemplate() {
+        try {
+            TrustManager[] trustAllCerts = new TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() { return null; }
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) { }
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) { }
+                }
+            };
+
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+            
+            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+
+            return new RestTemplate();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create insecure RestTemplate", e);
+        }
+    }
+
+    public String getAuthorizationEndpoint() { 
+        if (authorizationEndpoint == null) loadOidcMetadata();
+        return authorizationEndpoint; 
+    }
+
+    public String getTokenEndpoint() { 
+        if (tokenEndpoint == null) loadOidcMetadata();
+        return tokenEndpoint; 
+    }
+
+    public String getEndSessionEndpoint() { 
+        if (endSessionEndpoint == null) loadOidcMetadata();
+        return endSessionEndpoint; 
+    }
+
+    public String getRevokeEndpoint() { 
+        if (revokeEndpoint == null) loadOidcMetadata();
+        return revokeEndpoint; 
     }
 
     public String getClientId() { return clientId; }
