@@ -144,7 +144,7 @@ public class OidcController {
         
         if (cfg.tokenAuthMethod() == OidcProperties.TokenAuthMethod.PRIVATE_KEY_JWT){
             String clientAssertion = buildClientAssertion(cfg.clientId(), cfg.tokenEndpoint(),
-                    cfg.jwtSigningKeystorePath(), cfg.jwtSigningKeystorePassword());
+                    cfg.jwtAssertionSigningCertPath(), cfg.jwtAssertionSigningCertPassword());
             form.add("client_assertion_type",
                     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
             form.add("client_assertion", clientAssertion);
@@ -222,11 +222,11 @@ public class OidcController {
 
         if (dots == 4) { // JWE (encrypted)
             KeyStore ks = KeyStore.getInstance("PKCS12");
-            try (var fis = new java.io.FileInputStream(cfg.idTokenKeystorePath())) {
-                ks.load(fis, cfg.idTokenKeystorePassword().toCharArray());
+            try (var fis = new java.io.FileInputStream(cfg.idTokenDecryptionCertPath())) {
+                ks.load(fis, cfg.idTokenDecryptionCertPassword().toCharArray());
             }
             String alias = ks.aliases().nextElement();
-            PrivateKey decryptKey = (PrivateKey) ks.getKey(alias, cfg.idTokenKeystorePassword().toCharArray());
+            PrivateKey decryptKey = (PrivateKey) ks.getKey(alias, cfg.idTokenDecryptionCertPassword().toCharArray());
 
             EncryptedJWT jwe = EncryptedJWT.parse(idToken);
             jwe.decrypt(new com.nimbusds.jose.crypto.RSADecrypter(decryptKey));

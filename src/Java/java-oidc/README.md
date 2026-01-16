@@ -27,14 +27,21 @@ config:
     client-id: your-client-id
     client-secret: your-client-secret
     redirect-uri: https://localhost:8000/oidc/callback
-    post-logout-redirect-uri: https://localhost:8000/
     scope: openid
-    token-auth-method: client_secret_post  # Use 'private_key_jwt' for certificate auth or 'client_secret_post' for secret
+    # Token authentication method: client_secret_post, client_secret_basic, or private_key_jwt
+    token-auth-method: client_secret_post
     use-pkce: true
     authorization-endpoint-method: POST
-    # Optional: Required only for private_key_jwt authentication:
-    jwt-signing-keystore-path: ""
-    jwt-signing-keystore-password: ""
+    
+    # ID token decryption certificate (if provider encrypts ID tokens)
+    # Provider uses public key (use="enc") from jwks/jwks_uri to encrypt
+    id-token-decryption-cert-path: ""
+    id-token-decryption-cert-password: ""
+    
+    # JWT assertion signing certificate (required for private_key_jwt authentication)
+    # Provider must have corresponding public certificate (use="sig") in jwks/jwks_uri
+    jwt-assertion-signing-cert-path: ""
+    jwt-assertion-signing-cert-password: ""
 ```
 
 All OIDC settings are configured in the `config.oidc` section - no environment variables or duplicate configurations needed.
@@ -68,13 +75,14 @@ All OIDC configuration is centralized in `src/main/resources/application.yml` un
 | `client-id` | OAuth2 client identifier | `your-client-id` |
 | `client-secret` | OAuth2 client secret | `your-secret` |
 | `redirect-uri` | Callback URL after authentication | `https://localhost:8000/oidc/callback` |
-| `post-logout-redirect-uri` | Redirect URL after logout | `https://localhost:8000/` |
 | `scope` | OAuth2 scopes | `openid` |
-| `token-auth-method` | Token endpoint authentication method | `client_secret_post` or `private_key_jwt` |
+| `token-auth-method` | Token endpoint authentication method | `client_secret_post`, `client_secret_basic`, or `private_key_jwt` |
 | `use-pkce` | Enable PKCE for authorization code flow | `true` |
 | `authorization-endpoint-method` | HTTP method for authorization endpoint | `POST` |
-| `jwt-signing-keystore-path` | Path to PKCS12 certificate (for private_key_jwt) | `path/to/cert.p12` |
-| `jwt-signing-keystore-password` | Password for the keystore | `your-password` |
+| `id-token-decryption-cert-path` | Path to PKCS12 certificate for decrypting encrypted ID tokens | `path/to/decrypt-cert.p12` |
+| `id-token-decryption-cert-password` | Password for the decryption certificate | `your-password` |
+| `jwt-assertion-signing-cert-path` | Path to PKCS12 certificate for signing client_assertion (private_key_jwt only) | `path/to/sign-cert.p12` |
+| `jwt-assertion-signing-cert-password` | Password for the signing certificate | `your-password` |
 
 **Server Configuration:**
 - **Port**: 8000 (HTTPS by default)
@@ -108,13 +116,20 @@ The application runs on HTTPS by default. For development purposes, a self-signe
 - **OIDC connection issues**: Verify your issuer URI is correct and accessible
 - **401 Unauthorized errors**: 
   - Verify your `client-id` and `client-secret` are correct
-  - Check that `token-auth-method` matches your OIDC provider's requirements
-  - Some providers (like KOMBIT) may require `private_key_jwt` with a valid certificate
-- **Certificate authentication errors** (`invalid_client` with certificate expired): 
-  - Change `token-auth-method` to `private_key_jwt`
+  - Check that `token-auth-method` matches your OIDC provider's requirements:
+    - `client_secret_post`: Client credentials sent in request body (most common)
+    - `client_secret_basic`: Client credentials sent in HTTP Basic Authentication header
+    - `private_key_jwt`: Certificate-based authentication using signed JWT assertion
+  - For `private_key_jwt`: Ensure your signing certificate is valid and not expired
+- **Certificate authentication errors** (`invalid_client` with certificate issues): 
+  - Verify `jwt-assertion-signing-cert-path` and `jwt-assertion-signing-cert-password` are correct
   - Ensure your certificate (`.p12` file) is not expired
-  - Set `jwt-signing-keystore-path` and `jwt-signing-keystore-password`
+  - Confirm the provider has your public certificate (use=\"sig\") in their jwks/jwks_uri
   - Contact your OIDC provider to obtain a new certificate if expired
+- **Encrypted ID token errors**:
+  - If provider encrypts ID tokens, configure `id-token-decryption-cert-path` and `id-token-decryption-cert-password`
+  - Ensure the provider has your public key (use=\"enc\") in their jwks/jwks_uri
+  - Verify the certificate corresponds to the public key used by the provider
 
 ## Project Structure
 

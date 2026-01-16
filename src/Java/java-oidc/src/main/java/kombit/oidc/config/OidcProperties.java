@@ -44,10 +44,15 @@ public class OidcProperties {
     @NotBlank
     private String scope;
 
-    private String jwtSigningKeystorePath;
-    private String jwtSigningKeystorePassword;
-    private String idTokenKeystorePath;
-    private String idTokenKeystorePassword;
+    // Certificate for decrypting encrypted ID tokens (JWE)
+    // The OIDC provider encrypts ID tokens using the public key (use="enc") from jwks/jwks_uri
+    private String idTokenDecryptionCertPath;
+    private String idTokenDecryptionCertPassword;
+    
+    // Certificate for signing client_assertion in private_key_jwt authentication
+    // The jwks/jwks_uri must contain the corresponding public certificate (use="sig")
+    private String jwtAssertionSigningCertPath;
+    private String jwtAssertionSigningCertPassword;
 
     public enum TokenAuthMethod {
         CLIENT_SECRET_POST,
@@ -154,16 +159,16 @@ public class OidcProperties {
     public String getScope() { return scope; }
     public void setScope(String scope) { this.scope = scope; }
 
-    public String getJwtSigningKeystorePath() { return jwtSigningKeystorePath; }
-    public void setJwtSigningKeystorePath(String jwtSigningKeystorePath) { this.jwtSigningKeystorePath = jwtSigningKeystorePath; }
+    public String getIdTokenDecryptionCertPath() { return idTokenDecryptionCertPath; }
+    public void setIdTokenDecryptionCertPath(String idTokenDecryptionCertPath) { this.idTokenDecryptionCertPath = idTokenDecryptionCertPath; }
 
-    public String getJwtSigningKeystorePassword() { return jwtSigningKeystorePassword; }
-    public void setJwtSigningKeystorePassword(String jwtSigningKeystorePassword) { this.jwtSigningKeystorePassword = jwtSigningKeystorePassword; }
+    public String getIdTokenDecryptionCertPassword() { return idTokenDecryptionCertPassword; }
+    public void setIdTokenDecryptionCertPassword(String idTokenDecryptionCertPassword) { this.idTokenDecryptionCertPassword = idTokenDecryptionCertPassword; }
 
-    public String getIdTokenKeystorePath() { return idTokenKeystorePath; }
-    public void setIdTokenKeystorePath(String idTokenKeystorePath) { this.idTokenKeystorePath = idTokenKeystorePath; }
+    public String getJwtAssertionSigningCertPath() { return jwtAssertionSigningCertPath; }
+    public void setJwtAssertionSigningCertPath(String jwtAssertionSigningCertPath) { this.jwtAssertionSigningCertPath = jwtAssertionSigningCertPath; }
 
-    public String getIdTokenKeystorePassword() { return idTokenKeystorePassword; }
-    public void setIdTokenKeystorePassword(String idTokenKeystorePassword) { this.idTokenKeystorePassword = idTokenKeystorePassword; }
+    public String getJwtAssertionSigningCertPassword() { return jwtAssertionSigningCertPassword; }
+    public void setJwtAssertionSigningCertPassword(String jwtAssertionSigningCertPassword) { this.jwtAssertionSigningCertPassword = jwtAssertionSigningCertPassword; }
 
 }
