@@ -44,14 +44,14 @@ config:
     # Note: The OIDC provider may encrypt the ID token using the public key (use="enc") from the jwks or jwks_uri 
     # configured in the provider's connection settings. The jwks or jwks_uri must contain the public certificate 
     # in a key (use="enc") which corresponds to the below configured ID token decryption certificate.
-    id-token-decryption-cert-path: ""
-    id-token-decryption-cert-password: ""
+    id-token-decryption-cert-path: "C:\\certs\\KOMBIT_AS_-_WSC_Core_OBO.p12"
+    id-token-decryption-cert-password: "Test1234"
     
     # Certificate to sign the client_assertion for the private_key_jwt authentication method.
     # The jwks or jwks_uri must contain the public certificate (use="sig") which corresponds to the 
     # below configured JWT assertion signing certificate. Required only for private_key_jwt authentication.
-    jwt-assertion-signing-cert-path: ""
-    jwt-assertion-signing-cert-password: ""
+    jwt-assertion-signing-cert-path: "C:\\certs\\KOMBIT_AS_-_WSC_Core_OBO.p12"
+    jwt-assertion-signing-cert-password: "Test1234"
 
 
 

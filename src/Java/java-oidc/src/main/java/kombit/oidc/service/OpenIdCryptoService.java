@@ -34,16 +34,16 @@ public class OpenIdCryptoService {
     @PostConstruct
     public void init() throws Exception {
         // Skip initialization if keystore paths are not configured
-        if (cfg.jwtSigningKeystorePath() == null || cfg.jwtSigningKeystorePath().isEmpty()) {
+        if (cfg.jwtAssertionSigningCertPath() == null || cfg.jwtAssertionSigningCertPath().isEmpty()) {
             return;
         }
-        if (cfg.idTokenKeystorePath() == null || cfg.idTokenKeystorePath().isEmpty()) {
+        if (cfg.idTokenDecryptionCertPath() == null || cfg.idTokenDecryptionCertPath().isEmpty()) {
             return;
         }
 
         KeyStore verifyKs = KeyStore.getInstance("PKCS12");
-        try (FileInputStream fis = new FileInputStream(cfg.jwtSigningKeystorePath())) {
-            verifyKs.load(fis, cfg.jwtSigningKeystorePassword().toCharArray());
+        try (FileInputStream fis = new FileInputStream(cfg.jwtAssertionSigningCertPath())) {
+            verifyKs.load(fis, cfg.jwtAssertionSigningCertPassword().toCharArray());
         }
         String certAlias = firstCertificateAlias(verifyKs);
         if (certAlias == null) {
@@ -57,14 +57,14 @@ public class OpenIdCryptoService {
 
 
         KeyStore decryptKs = KeyStore.getInstance("PKCS12");
-        try (FileInputStream fis = new FileInputStream(cfg.idTokenKeystorePath())) {
-            decryptKs.load(fis, cfg.idTokenKeystorePassword().toCharArray());
+        try (FileInputStream fis = new FileInputStream(cfg.idTokenDecryptionCertPath())) {
+            decryptKs.load(fis, cfg.idTokenDecryptionCertPassword().toCharArray());
         }
         String keyAlias = firstPrivateKeyAlias(decryptKs);
         if (keyAlias == null) {
             throw new KeyStoreException("No private key alias found in idToken keystore.");
         }
-        Key pkey = decryptKs.getKey(keyAlias, cfg.idTokenKeystorePassword().toCharArray());
+        Key pkey = decryptKs.getKey(keyAlias, cfg.idTokenDecryptionCertPassword().toCharArray());
         if (!(pkey instanceof RSAPrivateKey)) {
             throw new IllegalStateException("Private key is not RSA; unsupported for RSA_* JWE.");
         }
