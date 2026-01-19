@@ -40,6 +40,7 @@ config:
     
     # JWT assertion signing certificate (required for private_key_jwt authentication)
     # Provider must have corresponding public certificate (use="sig") in jwks/jwks_uri
+    # The JWT assertion is signed using RS256 algorithm with the certificate's private key
     jwt-assertion-signing-cert-path: ""
     jwt-assertion-signing-cert-password: ""
 ```
@@ -119,7 +120,7 @@ The application runs on HTTPS by default. For development purposes, a self-signe
   - Check that `token-auth-method` matches your OIDC provider's requirements:
     - `client_secret_post`: Client credentials sent in request body (most common)
     - `client_secret_basic`: Client credentials sent in HTTP Basic Authentication header
-    - `private_key_jwt`: Certificate-based authentication using signed JWT assertion
+    - `private_key_jwt`: Certificate-based authentication using signed JWT assertion (RS256 algorithm)
   - For `private_key_jwt`: Ensure your signing certificate is valid and not expired
 - **Certificate authentication errors** (`invalid_client` with certificate issues): 
   - Verify `jwt-assertion-signing-cert-path` and `jwt-assertion-signing-cert-password` are correct
@@ -147,7 +148,3 @@ src/
 │       └── templates/       # HTML templates
 └── test/                    # Test files
 ```
-
-## License
-
-[Add your license here]

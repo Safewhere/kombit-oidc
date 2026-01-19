@@ -197,10 +197,19 @@ public class OidcController {
         java.security.cert.X509Certificate cert =
                 (java.security.cert.X509Certificate) ks.getCertificate(alias);
 
+        // Calculate SHA-1 hash of the certificate (same as C# GetCertHash())
+        java.security.MessageDigest sha1 = java.security.MessageDigest.getInstance("SHA-1");
+        byte[] certHash = sha1.digest(cert.getEncoded());
+        String kid = com.nimbusds.jose.util.Base64URL.encode(certHash).toString();
+        
+        // Calculate SHA-256 thumbprint for x5t#S256
         var thumb = com.nimbusds.jose.util.X509CertUtils.computeSHA256Thumbprint(cert);
+        var thumbBase64 = new com.nimbusds.jose.util.Base64URL(thumb.toString());
+        
         var header = new com.nimbusds.jose.JWSHeader.Builder(com.nimbusds.jose.JWSAlgorithm.RS256)
                 .type(com.nimbusds.jose.JOSEObjectType.JWT)
-                .x509CertSHA256Thumbprint(new com.nimbusds.jose.util.Base64URL(thumb.toString()))
+                .keyID(kid)
+                .x509CertSHA256Thumbprint(thumbBase64)
                 .build();
 
         var now = java.time.Instant.now();
