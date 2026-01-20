@@ -54,11 +54,11 @@ public class HomeController {
 
         if (dots == 4) { // JWE (encrypted)
             KeyStore ks = KeyStore.getInstance("PKCS12");
-            try (var fis = new java.io.FileInputStream(cfg.idTokenKeystorePath())) {
-                ks.load(fis, cfg.idTokenKeystorePassword().toCharArray());
+            try (var fis = new java.io.FileInputStream(cfg.idTokenDecryptionCertPath())) {
+                ks.load(fis, cfg.idTokenDecryptionCertPassword().toCharArray());
             }
             String alias = ks.aliases().nextElement();
-            PrivateKey decryptKey = (PrivateKey) ks.getKey(alias, cfg.idTokenKeystorePassword().toCharArray());
+            PrivateKey decryptKey = (PrivateKey) ks.getKey(alias, cfg.idTokenDecryptionCertPassword().toCharArray());
 
             EncryptedJWT jwe = EncryptedJWT.parse(idToken);
             jwe.decrypt(new com.nimbusds.jose.crypto.RSADecrypter(decryptKey));

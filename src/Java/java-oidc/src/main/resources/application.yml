@@ -9,17 +9,6 @@ spring:
   application:
     name: kombit-oidc
 
-  security:
-    oauth2:
-      client:
-        provider:
-          oidc:
-            issuer-uri: ${OIDC_ISSUER:https://kombitva322.safewhere.local/runtime/oauth2}
-        registration:
-          oidc:
-            provider: oidc
-            client-id: ${OIDC_CLIENT_ID}
-            client-secret: ${OIDC_CLIENT_SECRET}
 management:
   endpoints:
     web:
@@ -42,17 +31,27 @@ logging:
 config:
   oidc:
     registration-id: oidc
+    issuer-uri: https://kombitdev.safewhere.local/runtime/oauth2
+    client-id: https://localhost:8000
+    client-secret: secret-key-4567
     redirect-uri: https://localhost:8000/oidc/callback
-    client-id: ${OIDC_CLIENT_ID:java-application}
-    client-secret: ${OIDC_CLIENT_SECRET:java-secret-key-7890}
-    token-auth-method: ${OIDC_TOKEN_AUTH_METHOD:client_secret_post}
-    use-pkce: ${OIDC_USE_PKCE:true}
-    authorization-endpoint-method": ${OIDC_AUTH_ENDPOINT_METHOD:POST},
-    scope: ${OIDC_SCOPE:openid}
-    jwt-signing-keystore-path: ""
-    jwt-signing-keystore-password: ""
-    id-token-keystore-path: ""
-    id-token-keystore-password: ""
+    scope: openid
+    # Token authentication method: client_secret_post, client_secret_basic, or private_key_jwt
+    token-auth-method: client_secret_post
+    use-pkce: true
+    authorization-endpoint-method: POST
+    
+    # Note: The OIDC provider may encrypt the ID token using the public key (use="enc") from the jwks or jwks_uri 
+    # configured in the provider's connection settings. The jwks or jwks_uri must contain the public certificate 
+    # in a key (use="enc") which corresponds to the below configured ID token decryption certificate.
+    id-token-decryption-cert-path: ""
+    id-token-decryption-cert-password: ""
+    
+    # Certificate to sign the client_assertion for the private_key_jwt authentication method.
+    # The jwks or jwks_uri must contain the public certificate (use="sig") which corresponds to the 
+    # below configured JWT assertion signing certificate. Required only for private_key_jwt authentication.
+    jwt-assertion-signing-cert-path: ""
+    jwt-assertion-signing-cert-password: ""
 
 
 

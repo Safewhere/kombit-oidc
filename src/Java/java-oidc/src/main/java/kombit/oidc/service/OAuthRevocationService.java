@@ -18,9 +18,8 @@ public class OAuthRevocationService {
 
     public OAuthRevocationService(OidcClientConfig cfg) {
         this.cfg = cfg;
-        this.client = WebClient.builder()
-                .defaultHeaders(h -> h.setBasicAuth(cfg.clientId(), cfg.clientSecret()))
-                .build();
+        // Don't use Basic Auth - send credentials in request body instead (CLIENT_SECRET_POST)
+        this.client = WebClient.builder().build();
     }
 
     public void revokeTokens(TokenBundle tokens) {
@@ -39,6 +38,9 @@ public class OAuthRevocationService {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("token", token);
         form.add("token_type_hint", tokenTypeHint);
+        // Add client credentials in the request body (CLIENT_SECRET_POST method)
+        form.add("client_id", cfg.clientId());
+        form.add("client_secret", cfg.clientSecret());
 
         client.post()
                 .uri(cfg.revokeEndpoint())

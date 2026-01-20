@@ -98,6 +98,44 @@ class CustomUserManager extends UserManager {
         });
     }
 
+    signoutPost(args = {}) {
+        args = Object.assign({}, args);
+
+        return this._signoutStartPost(args, this._redirectNavigator).then(() => {
+            console.log("UserManager.signoutPost: successful");
+        });
+    }
+
+    _signoutStartPost(args, navigator) {
+        return navigator.prepare().then(handle => {
+            return this.createSignoutRequest(args).then(signoutRequest => {
+                let url = new URL(signoutRequest.url);
+
+                const form = document.createElement("form");
+                form.method = "POST";
+                form.action = url.origin + url.pathname;
+
+                url.searchParams.forEach((value, key) => {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = key;
+                    input.value = value;
+                    form.appendChild(input);
+                });
+
+                document.body.appendChild(form);
+                form.submit();
+
+                return Promise.resolve(); // Since navigation happens via form submission
+            }).catch(err => {
+                if (handle.close) {
+                    handle.close();
+                }
+                throw err;
+            });
+        });
+    }
+
     async signinSilent(args = {}) {
         console.log("[signinSilent] called");
         args = Object.assign({}, args);
@@ -107,17 +145,17 @@ class CustomUserManager extends UserManager {
                 try {
                     return await this._useRefreshToken({ ...args, refresh_token: user.refresh_token });
                 } catch (err) {
-                    console.error("[signinSilent] Refresh token failed");
+                    console.error("[signinSilent] Refresh token failed, attempting silent reauthentication");
 
                     const { isAuthnMethodPost } = sessionStore.get(AUTH_FORM_SETTINGS) || {};
                     const extraQueryParams = {
-                        nonce: this._settings.extraQueryParams.nonce,
-                        prompt: "login"
+                        nonce: this._settings.extraQueryParams.nonce
+                        // Removed prompt: "login" to allow silent reauthentication without forcing interactive login
                     };
 
                     this.prepareSigninParams(extraQueryParams);
 
-                    console.log("[signinSilent] Attempting to sign in via redirect or POST: ", extraQueryParams);
+                    console.log("[signinSilent] Attempting to sign in silently via redirect or POST: ", extraQueryParams);
 
                     return isAuthnMethodPost
                         ? this.signinPost({ extraQueryParams })
@@ -184,8 +222,6 @@ class CustomUserManager extends UserManager {
         
         args.grant_type = args.grant_type || "refresh_token";
         args.client_id = args.client_id || this._settings.client_id;
-        args.redirect_uri = settings.redirect_uri;
-        args.code_verifier = sessionStore.get(CODE_VERIFIER_KEY);
 
         const client_authentication = args._client_authentication || this._settings._client_authentication;
         delete args._client_authentication;
@@ -244,13 +280,73 @@ class CustomUserManager extends UserManager {
 class AuthService {
     constructor() {
         this.userManager = new CustomUserManager(settings);
+        this.usePostLogout = false; // Flag to track if POST logout should be used
+        this.isHandlingSessionExpiry = false; // Flag to prevent multiple simultaneous session expiry handling
         this.setupEventListeners();
     }
 
     setupEventListeners() {
+        // Prevent logout loop - only handle explicit user signout, not session changes from silent renewal
         this.userManager.events.addUserSignedOut(async () => {
             console.log("User signed out event triggered.");
-            await this.logout();
+            
+            // If we're already handling session expiry, ignore this event
+            if (this.isHandlingSessionExpiry) {
+                console.log("Already handling session expiry, ignoring userSignedOut event");
+                return;
+            }
+            
+            // Get user to check current state
+            const user = await this.userManager.getUser();
+            console.log("User signed out - User state:", user ? "exists" : "null", user?.expired ? "expired" : "valid");
+            
+            // When session monitor detects user signed out (e.g., from another SP logout),
+            // we should clear the local session and redirect to login page
+            // This event fires when the IDP session is terminated externally
+            console.log("IDP session terminated, clearing local session and redirecting to login");
+            this.isHandlingSessionExpiry = true;
+            
+            // Stop automatic silent renew to prevent any pending renewal attempts
+            this.userManager.stopSilentRenew();
+            
+            // Clear storage and remove user
+            sessionStore.clear();
+            await this.userManager.removeUser();
+            
+            console.log("Session cleared, redirecting to home page");
+            // Redirect to home/login page
+            window.location.href = '/';
+        });
+
+        // Handle silent renew errors, especially login_required
+        this.userManager.events.addSilentRenewError(async (error) => {
+            console.error("Silent renew error:", error);
+            
+            // If we're already handling session expiry, ignore this event
+            if (this.isHandlingSessionExpiry) {
+                console.log("Already handling session expiry, ignoring silent renew error");
+                return;
+            }
+            
+            // Check if the error is login_required or session terminated
+            if (error && (error.error === 'login_required' || error.message?.includes('login_required') || 
+                         error.error === 'interaction_required' || error.message?.includes('interaction_required'))) {
+                console.log("Session expired (login_required), clearing session and redirecting to login page");
+                
+                this.isHandlingSessionExpiry = true;
+                
+                // Stop automatic silent renew immediately to prevent any further attempts
+                this.userManager.stopSilentRenew();
+                
+                // Clear storage and user data
+                sessionStore.clear();
+                await this.userManager.removeUser();
+                
+                // Small delay to ensure all cleanup is complete before redirect
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 100);
+            }
         });
     }
 
@@ -286,9 +382,15 @@ class AuthService {
     async handleCallback() {
         try {
             const user = await this.userManager.signinRedirectCallback();
-            // rebuild the session monitor with the new session state to avoid automatic logout.
             console.log("User signed in successfully: ", user.profile.sub + '|' + user.session_state);
-            this.userManager._sessionMonitor = new SessionMonitor(this.userManager);
+            
+            // Only rebuild session monitor if it doesn't exist yet (initial login)
+            // Don't rebuild on silent renewals to avoid triggering userSignedOut events
+            if (!this.userManager._sessionMonitor) {
+                console.log("Initializing session monitor");
+                this.userManager._sessionMonitor = new SessionMonitor(this.userManager);
+            }
+            
             return user;
         }
         catch (e) {
@@ -297,15 +399,27 @@ class AuthService {
         }
     }
 
-    async logout() {
+    async logout(usePost = null) {
         const user = await this.getUser();
-        const id_token =  user ? user.id_token : null;
+        const id_token = user ? user.id_token : null;
+        
+        // Determine whether to use POST logout
+        const shouldUsePost = usePost !== null ? usePost : this.usePostLogout;
+        
         try {
-            await this.userManager.signoutRedirect({ id_token_hint: id_token });
+            if (shouldUsePost) {
+                console.log("Logging out using POST method");
+                await this.userManager.signoutPost({ id_token_hint: id_token });
+            } else {
+                console.log("Logging out using GET method (redirect)");
+                await this.userManager.signoutRedirect({ id_token_hint: id_token });
+            }
             sessionStore.clear();
+            this.usePostLogout = false; // Reset the flag after logout
         }
         catch (e) {
             console.error("[logout] Error logging out", e);
+            this.usePostLogout = false; // Reset the flag on error
         }
     }
 
@@ -327,6 +441,11 @@ class AuthService {
     async getIdToken() {
         const user = await this.getUser();
         return user ? user.id_token : null;
+    }
+
+    async getRefreshToken() {
+        const user = await this.getUser();
+        return user ? user.refresh_token : null;
     }
 
     async decodeToken(token) {

@@ -5,13 +5,20 @@ import kombit.oidc.config.OidcClientConfig;
 import kombit.oidc.config.OidcProperties;
 import kombit.oidc.service.OpenIdCryptoService;
 import kombit.oidc.util.TokenBundle;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.netty.http.client.HttpClient;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 
 import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,11 +34,31 @@ import java.util.UUID;
 
 @Controller
 public class OidcController {
+    
+    private static final Logger log = LoggerFactory.getLogger(OidcController.class);
 
-    private final WebClient webClient = WebClient.builder().build();
+    private final WebClient webClient;
     private final OidcClientConfig cfg;
+    
     public OidcController(OidcClientConfig cfg) {
         this.cfg = cfg;
+        
+        // Create WebClient with SSL verification disabled for development
+        try {
+            // Build SSL context outside the lambda since build() throws checked exception
+            var sslContext = SslContextBuilder.forClient()
+                .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                .build();
+            
+            HttpClient httpClient = HttpClient.create()
+                .secure(sslSpec -> sslSpec.sslContext(sslContext));
+            
+            this.webClient = WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create WebClient with insecure SSL", e);
+        }
     }
 
     @Autowired
@@ -107,31 +134,54 @@ public class OidcController {
         form.add("grant_type", "authorization_code");
         form.add("code", code);
         form.add("redirect_uri", cfg.redirectUri());
-        form.add("client_id", cfg.clientId());
 
         if (cfg.usePkce() && codeVerifier != null && !codeVerifier.isBlank()) {
             form.add("code_verifier", codeVerifier);
         }
 
         cfg.tokenAuthMethod();
+        log.info("Using authentication method: {}", cfg.tokenAuthMethod());
+        
         if (cfg.tokenAuthMethod() == OidcProperties.TokenAuthMethod.PRIVATE_KEY_JWT){
             String clientAssertion = buildClientAssertion(cfg.clientId(), cfg.tokenEndpoint(),
-                    cfg.jwtSigningKeystorePath(), cfg.jwtSigningKeystorePassword());
+                    cfg.jwtAssertionSigningCertPath(), cfg.jwtAssertionSigningCertPassword());
             form.add("client_assertion_type",
                     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
             form.add("client_assertion", clientAssertion);
+            log.info("Added client_assertion to request (private_key_jwt authentication)");
         } else {
+            form.add("client_id", cfg.clientId());
             form.add("client_secret", cfg.clientSecret());
+            log.info("Added client_id and client_secret to request ({} authentication)", cfg.tokenAuthMethod());
         }
 
-        return webClient.post()
-                .uri(cfg.tokenEndpoint())
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .accept(MediaType.APPLICATION_JSON)
-                .body(BodyInserters.fromFormData(form))
-                .retrieve()
-                .bodyToMono(Map.class)
-                .block();
+        log.info("Exchanging code for token at: {}", cfg.tokenEndpoint());
+        log.info("Complete form parameters: {}", form.toSingleValueMap().keySet());
+        log.info("Request parameters: grant_type=authorization_code, redirect_uri={}, has_code={}, has_code_verifier={}", 
+            cfg.redirectUri(), code != null, codeVerifier != null);
+
+        try {
+            Map response = webClient.post()
+                    .uri(cfg.tokenEndpoint())
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(BodyInserters.fromFormData(form))
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+            
+            log.info("Token exchange successful!");
+            return response;
+            
+        } catch (WebClientResponseException e) {
+            log.error("Token exchange failed with status: {}", e.getStatusCode());
+            log.error("Error response body: {}", e.getResponseBodyAsString());
+            log.error("Response headers: {}", e.getHeaders());
+            throw e;
+        } catch (Exception e) {
+            log.error("Exception during token exchange: {}", e.getMessage(), e);
+            throw e;
+        }
     }
     private String buildClientAssertion(String clientId,
                                         String tokenEndpoint,
@@ -147,10 +197,19 @@ public class OidcController {
         java.security.cert.X509Certificate cert =
                 (java.security.cert.X509Certificate) ks.getCertificate(alias);
 
+        // Calculate SHA-1 hash of the certificate (same as C# GetCertHash())
+        java.security.MessageDigest sha1 = java.security.MessageDigest.getInstance("SHA-1");
+        byte[] certHash = sha1.digest(cert.getEncoded());
+        String kid = com.nimbusds.jose.util.Base64URL.encode(certHash).toString();
+        
+        // Calculate SHA-256 thumbprint for x5t#S256
         var thumb = com.nimbusds.jose.util.X509CertUtils.computeSHA256Thumbprint(cert);
+        var thumbBase64 = new com.nimbusds.jose.util.Base64URL(thumb.toString());
+        
         var header = new com.nimbusds.jose.JWSHeader.Builder(com.nimbusds.jose.JWSAlgorithm.RS256)
                 .type(com.nimbusds.jose.JOSEObjectType.JWT)
-                .x509CertSHA256Thumbprint(new com.nimbusds.jose.util.Base64URL(thumb.toString()))
+                .keyID(kid)
+                .x509CertSHA256Thumbprint(thumbBase64)
                 .build();
 
         var now = java.time.Instant.now();
@@ -172,11 +231,11 @@ public class OidcController {
 
         if (dots == 4) { // JWE (encrypted)
             KeyStore ks = KeyStore.getInstance("PKCS12");
-            try (var fis = new java.io.FileInputStream(cfg.idTokenKeystorePath())) {
-                ks.load(fis, cfg.idTokenKeystorePassword().toCharArray());
+            try (var fis = new java.io.FileInputStream(cfg.idTokenDecryptionCertPath())) {
+                ks.load(fis, cfg.idTokenDecryptionCertPassword().toCharArray());
             }
             String alias = ks.aliases().nextElement();
-            PrivateKey decryptKey = (PrivateKey) ks.getKey(alias, cfg.idTokenKeystorePassword().toCharArray());
+            PrivateKey decryptKey = (PrivateKey) ks.getKey(alias, cfg.idTokenDecryptionCertPassword().toCharArray());
 
             EncryptedJWT jwe = EncryptedJWT.parse(idToken);
             jwe.decrypt(new com.nimbusds.jose.crypto.RSADecrypter(decryptKey));

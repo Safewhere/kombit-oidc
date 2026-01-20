@@ -37,10 +37,10 @@ public class OidcClientConfig {
     public boolean usePkce()              { return p.isUsePkce(); }
     public String redirectUri()           { return p.getRedirectUri(); }
     public String scope()                 { return p.getScope(); }
-    public String jwtSigningKeystorePath(){ return p.getJwtSigningKeystorePath(); }
-    public String jwtSigningKeystorePassword(){ return p.getJwtSigningKeystorePassword(); }
-    public String idTokenKeystorePath()   { return p.getIdTokenKeystorePath(); }
-    public String idTokenKeystorePassword(){ return p.getIdTokenKeystorePassword(); }
+    public String jwtAssertionSigningCertPath(){ return p.getJwtAssertionSigningCertPath(); }
+    public String jwtAssertionSigningCertPassword(){ return p.getJwtAssertionSigningCertPassword(); }
+    public String idTokenDecryptionCertPath()   { return p.getIdTokenDecryptionCertPath(); }
+    public String idTokenDecryptionCertPassword(){ return p.getIdTokenDecryptionCertPassword(); }
     public OidcProperties.AuthorizationMethod authorizationEndpointMethod() { return p.getAuthorizationEndpointMethod();}
 
     public String buildAuthorizeUrl(

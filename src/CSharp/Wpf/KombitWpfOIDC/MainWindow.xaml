@@ -51,7 +51,7 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <TextBlock x:Name="Message" Foreground="{StaticResource TxtDim}"
-                                       FontSize="16" TextAlignment="Center" Margin="0,0,0,25"><Run Text="Welcome to the Windows Application System"/><Run/></TextBlock>
+                                       FontSize="16" TextAlignment="Center" Margin="0,0,0,25"><Run Text="OIDC Windows App"/><Run/></TextBlock>
 
                                     <StackPanel Margin="0,0,0,20">
                                         <TextBlock Text="Assurance Level" Margin="0,0,0,10" Foreground="#ccd7ff" FontWeight="SemiBold"  FontSize="13"/>
@@ -105,7 +105,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="80"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
@@ -129,6 +129,7 @@
                                 </Border>
                                 <StackPanel Margin="10 0 0 0" VerticalAlignment="Center">
                                     <TextBlock Text="WPF Application" FontSize="15" Foreground="#7788bf"/>
+                                    <TextBlock Text="{Binding ClientId}" FontSize="11" Foreground="#7788bf"/>
                                 </StackPanel>
                             </StackPanel>
 
@@ -150,38 +151,75 @@
                     </Border>
 
                     <!-- HEADER -->
-                    <Border Grid.Column="1" CornerRadius="14" Padding="18" Margin="15,0,0,0">
+                    <Border Grid.Column="1" CornerRadius="14" Padding="18" Margin="15,15,15,0">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- Row 1: User Info and Action Buttons -->
+                            <Grid Grid.Row="0" Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Border Width="28" Height="28" CornerRadius="8" Background="#223266"/>
-                                <TextBlock Text="Hi!" Foreground="#ccd7ff" FontSize="18" Margin="10,1,0,0"/>
-                            </StackPanel>
+                                <!-- User Info -->
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Width="28" Height="28" CornerRadius="8" Background="#223266"/>
+                                    <TextBlock Text="{Binding Subject}" Foreground="#ccd7ff" FontSize="18" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
 
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                Click="ReAuth">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Re-authenticate" Foreground="#f2f2f2" FontSize="13"/>
+                            </Grid>
+
+                            <!-- Row 2: Authentication Parameters -->
+                            <Grid Grid.Row="1">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                    <StackPanel Margin="0,0,20,0">
+                                        <TextBlock Text="Assurance Level" Margin="0,0,0,6" Foreground="#ccd7ff" FontWeight="SemiBold" FontSize="12"/>
+                                        <Border CornerRadius="8" Background="#FFFFFF" Padding="0" MinWidth="280">
+                                            <ComboBox Style="{StaticResource ComboBox}" FontSize="12" Height="35"
+                                                      SelectedIndex="{Binding ElementName=AssuranceLevelCombo, Path=SelectedIndex, Mode=TwoWay}">
+                                                <ComboBoxItem Content=""/>
+                                                <ComboBoxItem Content="https://data.gov.dk/concept/core/nsis/loa/High"/>
+                                                <ComboBoxItem Content="https://data.gov.dk/concept/core/nsis/loa/Low"/>
+                                                <ComboBoxItem Content="https://data.gov.dk/concept/core/nsis/loa/Substantial"/>
+                                                <ComboBoxItem Content="urn:dk:gov:saml:attribute:AssuranceLevel:1"/>
+                                                <ComboBoxItem Content="urn:dk:gov:saml:attribute:AssuranceLevel:2"/>
+                                                <ComboBoxItem Content="urn:dk:gov:saml:attribute:AssuranceLevel:3"/>
+                                                <ComboBoxItem Content="urn:dk:gov:saml:attribute:AssuranceLevel:4"/>
+                                            </ComboBox>
+                                        </Border>
                                     </StackPanel>
-                                </Button>
-                                <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                    Click="ForceAuth">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Force Authentication" Foreground="#f2f2f2" FontSize="13"/>
+
+                                    <StackPanel>
+                                        <TextBlock Text="max_age" Margin="0,0,0,6" Foreground="#ccd7ff" FontWeight="SemiBold" FontSize="12"/>
+                                        <Border CornerRadius="8" Background="#FFFFFF" Padding="10" Width="120">
+                                            <TextBox BorderThickness="0" Foreground="#2A3E78" BorderBrush="#2A3E78"
+                                                     Text="{Binding ElementName=MaxAgeBox, Path=Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                     local:NumberOnlyBehavior.IsEnabled="True" FontSize="13"/>
+                                        </Border>
                                     </StackPanel>
-                                </Button>
-                                <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
-                                    Click="PassiveAuth">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Passive Authentication" Foreground="#f2f2f2" FontSize="13"/>
+
+                                    <!-- Action Buttons -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" HorizontalAlignment="Left">
+                                        <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                            Click="ReAuth" Margin="5,0">
+                                            <TextBlock Text="Re-authenticate" Foreground="#f2f2f2" FontSize="13"/>
+                                        </Button>
+                                        <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                            Click="ForceAuth" Margin="5,0">
+                                            <TextBlock Text="Force Authentication" Foreground="#f2f2f2" FontSize="13"/>
+                                        </Button>
+                                        <Button Style="{StaticResource topMenuButton}" Background="#5b60c4" Foreground="#ffffff"
+                                            Click="PassiveAuth" Margin="5,0">
+                                            <TextBlock Text="Passive Authentication" Foreground="#f2f2f2" FontSize="13"/>
+                                        </Button>
                                     </StackPanel>
-                                </Button>
-                            </StackPanel>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </Border>
 
@@ -190,8 +228,39 @@
                     <Border Grid.Column="1" Grid.Row="1" CornerRadius="20" Margin="20,0,20,20" >
                         <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="True"  Padding="4,0,0,0" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Orientation="Vertical">
+                                <!-- TOKEN Section -->
                                 <StackPanel Margin="0 0 0 20">
-                                    <TextBlock Foreground="#ccd7ff" FontSize="13" Text="TOKEN" Margin="0 0 0 7" FontWeight="DemiBold"/>
+                                    <Grid Margin="0 0 0 7">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Foreground="#ccd7ff" FontSize="13" Text="TOKEN" FontWeight="DemiBold"/>
+                                        <Button x:Name="BtnCopyToken" Grid.Column="1" Content="Copy" Foreground="#f2f2f2" FontSize="11" 
+                                                Background="#5b60c4" BorderThickness="0" Padding="10,5" 
+                                                Cursor="Hand" Click="CopyToken_Click"
+                                                ToolTip="Copy token to clipboard">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}" 
+                                                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#7580d4"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
                                     <Border CornerRadius="10" Background="#243771" Padding="10">
                                         <TextBlock x:Name="TxtLog" TextWrapping="Wrap" Foreground="#ccd7ff" FontSize="13"/>
                                     </Border>

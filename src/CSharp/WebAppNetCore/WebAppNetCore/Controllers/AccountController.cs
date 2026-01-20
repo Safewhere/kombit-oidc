@@ -12,6 +12,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Cryptography.X509Certificates;
 
 namespace WebAppNetCore.Controllers
 {
@@ -141,31 +144,50 @@ namespace WebAppNetCore.Controllers
             }
 
             // Read the logout token and validate it
-            var tokenHandler = new JwtSecurityTokenHandler();
+            var tokenHandler = new JsonWebTokenHandler();
             if (!tokenHandler.CanReadToken(logout_token))
             {
                 return BadRequest("Invalid logout token format.");
             }
 
-            JwtSecurityToken jtw = tokenHandler.ReadJwtToken(logout_token);
+            // Read the token header to check if it's encrypted
+            var token = tokenHandler.ReadJsonWebToken(logout_token);
+            string decryptedTokenString = logout_token;
             
+            // Check if the token is encrypted (JWE)
+            if (OpenIdConnectHelper.IdTokenEncryptedResponseAlgs.Contains(token.Alg) ||
+                OpenIdConnectHelper.IdTokenEncryptedResponseEnc.Contains(token.Enc))
+            {
+                // Token is encrypted, decrypt it
+                var certPath = configuration.IdTokenDecryptionCertPath();
+                var certPassword = configuration.IdTokenDecryptionCertPassword();
+                
+                if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(certPassword))
+                {
+                    return BadRequest("Decryption certificate is not configured.");
+                }
+                
+                var cert = new X509Certificate2(certPath, certPassword);
+                if (cert == null || !cert.HasPrivateKey)
+                {
+                    return BadRequest("Decryption certificate does not have a private key.");
+                }
+                
+                var encryptionCredentials = new X509EncryptingCredentials(cert, token.Alg, token.Enc);
+                decryptedTokenString = OpenIdConnectHelper.DecryptToken(logout_token, encryptionCredentials);
+            }
+
+            // Now read the decrypted token
+            JwtSecurityToken jwt = new JwtSecurityTokenHandler().ReadJwtToken(decryptedTokenString);
+
             // Logout token validation
             /*
-            Validate the Logout Token signature in the same way that an ID Token signature is validated, with the following refinements.
-            Validate the alg (algorithm) Header Parameter in the same way it is validated for ID Tokens. Like ID Tokens, selection of the algorithm used is governed by the id_token_signing_alg_values_supported Discovery parameter and the id_token_signed_response_alg Registration parameter when they are used; otherwise, the value SHOULD be the default of RS256. Additionally, an alg with the value none MUST NOT be used for Logout Tokens.
-            Validate the iss, aud, iat, and exp Claims in the same way they are validated in ID Tokens.
-            Verify that the Logout Token contains a sub Claim, a sid Claim, or both.
-            Verify that the Logout Token contains an events Claim whose value is JSON object containing the member name http://schemas.openid.net/event/backchannel-logout.
-            Verify that the Logout Token does not contain a nonce Claim.
-            Optionally verify that another Logout Token with the same jti value has not been recently received.
-            Optionally verify that the iss Logout Token Claim matches the iss Claim in an ID Token issued for the current session or a recent session of this RP with the OP.
-            Optionally verify that any sub Logout Token Claim matches the sub Claim in an ID Token issued for the current session or a recent session of this RP with the OP.
-            Optionally verify that any sid Logout Token Claim matches the sid Claim in an ID Token issued for the current session or a recent session of this RP with the OP. 
+            For demo purposes, we ignore the logout token validation.
             */
 
-            // Invalidate session data
-            var sid = jtw.Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId)?.Value;
-            if (OpenIdConnectHelper.LiveSessions.ContainsKey(sid))
+            // Invalidate session data, so next request with this session id will be rejected
+            var sid = jwt.Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId)?.Value;
+            if (!string.IsNullOrEmpty(sid) && OpenIdConnectHelper.LiveSessions.ContainsKey(sid))
             {
                 OpenIdConnectHelper.LiveSessions[sid] = false;
             }

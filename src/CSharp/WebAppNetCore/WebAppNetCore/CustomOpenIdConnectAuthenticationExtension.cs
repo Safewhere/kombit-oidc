@@ -192,8 +192,15 @@ namespace WebAppNetCore
                     var responseContent = await response.Content.ReadAsStringAsync();
                     var tokenResponse = JsonDocument.Parse(responseContent).RootElement;
 
-                    var idToken = tokenResponse.GetProperty("id_token").GetString();
-                    var accessToken = tokenResponse.GetProperty("access_token").GetString();
+                    idToken = tokenResponse.GetProperty("id_token").GetString();
+                    accessToken = tokenResponse.GetProperty("access_token").GetString();
+
+                    // Note that when "Session management" is disabled, there is no "session_state" in the token response
+                    sessionState = string.Empty;
+                    if (tokenResponse.TryGetProperty("session_state", out JsonElement sessionStateElement))
+                    {
+                        sessionState = sessionStateElement.GetString() ?? string.Empty;
+                    }
 
                     // Read the Id token header to determine if it is encrypted
                     if (!string.IsNullOrEmpty(idToken))
@@ -226,17 +233,35 @@ namespace WebAppNetCore
                     }
 
                     context.HandleCodeRedemption(accessToken, idToken);
+                    context.TokenEndpointResponse.SessionState = sessionState;
 
                     await Task.FromResult(0);
                 },
                 OnTokenResponseReceived = async (context) =>
                 {
                     Console.WriteLine("OnTokenResponseReceived.");
+                    sessionState = context.TokenEndpointResponse.SessionState;
                     await Task.FromResult(0);
                 },
                 OnTokenValidated = async (context) =>
                 {
                     Console.WriteLine("OnTokenValidated.");
+                    if (accessToken != null)
+                    {
+                        ClaimsIdentity identity = context.Principal.Identity as ClaimsIdentity;
+                        if (identity != null)
+                        {
+                            Claim sessionStateClaim = null;
+                            if (!string.IsNullOrEmpty(sessionState))
+                            {
+                                sessionStateClaim = new Claim(OpenIdConnectConstants.SessionState, sessionState);
+                            }
+                            if (!identity.Claims.Any(c => c.Type == OpenIdConnectConstants.SessionState) && sessionStateClaim != null)
+                            {
+                                identity.AddClaim(sessionStateClaim);
+                            }
+                        }
+                    }
                     await Task.FromResult(0);
                 },
                 OnUserInformationReceived = async (context) =>

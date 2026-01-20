@@ -7,23 +7,21 @@ using Serilog;
 namespace KombitWpfOIDC
 {
     /// <summary>
-    /// Browser implementation that uses custom URL scheme (e.g., myapp://callback) 
+    /// Browser implementation that uses custom URL scheme (wpfoidc://callback) 
     /// instead of HTTP loopback for OAuth callbacks
     /// </summary>
     public class CustomSchemeBrowser : IBrowser
     {
-        private readonly string _customScheme;
+        private const string CustomScheme = "wpfoidc";
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(0, 1);
         private BrowserResult? _result;
         private readonly EventHandler<string> _callbackHandler;
         private bool _disposed = false;
 
-        public CustomSchemeBrowser(string customScheme = "wpfoidc")
+        public CustomSchemeBrowser()
         {
-            _customScheme = customScheme;
-
             // Ensure the custom scheme is registered on first use
-            CustomSchemeProtocolHandler.RegisterScheme(_customScheme);
+            CustomSchemeProtocolHandler.RegisterScheme();
 
             // Create instance-specific callback handler
             _callbackHandler = OnCallbackReceived;
@@ -180,7 +178,7 @@ namespace KombitWpfOIDC
     }
 
     /// <summary>
-    /// Handles Windows custom URL protocol registration and callback processing
+    /// Handles Windows custom URL protocol registration and callback processing for wpfoidc:// scheme
     /// </summary>
     public static class CustomSchemeProtocolHandler
     {
@@ -190,9 +188,9 @@ namespace KombitWpfOIDC
         public static event EventHandler<string>? CallbackReceived;
 
         /// <summary>
-        /// Register a custom URL scheme in Windows Registry using the modern registrar
+        /// Register the wpfoidc:// custom URL scheme in Windows Registry
         /// </summary>
-        public static void RegisterScheme(string scheme)
+        public static void RegisterScheme()
         {
             if (_isRegistered) return;
 
@@ -221,8 +219,8 @@ namespace KombitWpfOIDC
 
             foreach (var arg in args)
             {
-                // Look for custom scheme URLs
-                if (arg.StartsWith("wpfoidc://", StringComparison.OrdinalIgnoreCase) || arg.StartsWith("myapp://", StringComparison.OrdinalIgnoreCase))
+                // Look for wpfoidc:// scheme URL
+                if (arg.StartsWith("wpfoidc://", StringComparison.OrdinalIgnoreCase))
                 {
                     // Prevent duplicate processing
                     if (_lastCallbackUrl == arg)

@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using IdentityModel.Client;
 using IdentityModel.OidcClient;
 using IdentityModel.OidcClient.Browser;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 namespace KombitWpfOIDC
@@ -28,7 +29,6 @@ namespace KombitWpfOIDC
             InitializeComponent();
             InitializeOidcClient();
             DataContext = this;
-            this.Closing += MainWindow_Closing;
         }
 
         private void InitializeOidcClient()
@@ -40,7 +40,7 @@ namespace KombitWpfOIDC
                 Scope = ConfigurationExtensions.Scope,
                 RedirectUri = ConfigurationExtensions.LoopbackRedirect,
                 PostLogoutRedirectUri = ConfigurationExtensions.LoopbackRedirect,
-                Browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser(ConfigurationExtensions.CustomScheme) : new SystemBrowser(),
+                Browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser() : new SystemBrowser(),
                 Policy = new Policy
                 {
                     Discovery = new DiscoveryPolicy()
@@ -50,6 +50,8 @@ namespace KombitWpfOIDC
                     }
                 }
             };
+
+            ClientId = ConfigurationExtensions.ClientId;
 
             LoggerConfig.InfoAsJson("OIDC client options configured", _options);
         }
@@ -96,7 +98,7 @@ namespace KombitWpfOIDC
             IBrowser? browser = null;
             try
             {
-                browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser(ConfigurationExtensions.CustomScheme) : new SystemBrowser();
+                browser = ConfigurationExtensions.UseCustomScheme ? new CustomSchemeBrowser() : new SystemBrowser();
                 var browserResult = await browser.InvokeAsync(new BrowserOptions(authorizeUrl.Url, ConfigurationExtensions.LoopbackRedirect));
 
                 if (browserResult.ResultType != BrowserResultType.Success)
@@ -209,7 +211,18 @@ namespace KombitWpfOIDC
                         ClockSkew = TimeSpan.FromMinutes(2)
                     };
                     var principal = handler.ValidateToken(idToken, tvp, out _);
+                    
+                    // Extract subject claim
+                    var subjectClaim = principal.FindFirst("sub")?.Value 
+                                    ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                                    ?? "Unknown";
+                    
+                    Log.Information("Setting Subject to: {Subject}", subjectClaim);
+                    
                     IsAuthenticated = true;
+                    Subject = subjectClaim;
+                    
+                    Log.Information("Subject property set. Current value: {Subject}, IsAuthenticated: {IsAuthenticated}", Subject, IsAuthenticated);
                 }
                 catch (Exception ex)
                 {
@@ -231,18 +244,6 @@ namespace KombitWpfOIDC
                     disposableBrowser.Dispose();
                     Log.Information("Browser instance disposed");
                 }
-            }
-        }
-
-        private void MainWindow_Closing(object? sender, CancelEventArgs e)
-        {
-            try
-            {
-                DoLogout();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Logout failed");
             }
         }
 
@@ -363,6 +364,40 @@ namespace KombitWpfOIDC
                 TxtLog.Text = token;
                 TxtHeader.Text = decoded.Value.HeaderJson;
                 TxtPayload.Text = decoded.Value.PayloadJson;
+                
+                // Reset copy button text when token changes
+                ResetCopyButtonText();
+            }
+        }
+
+        private void CopyToken_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(TxtLog.Text))
+                {
+                    Clipboard.SetText(TxtLog.Text);
+                    Log.Information("Token copied to clipboard");
+                    
+                    // Update button text to "Copied"
+                    BtnCopyToken.Content = "Copied";
+                }
+                else
+                {
+                    Log.Warning("No token content to copy");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to copy token to clipboard");
+            }
+        }
+
+        private void ResetCopyButtonText()
+        {
+            if (BtnCopyToken != null && BtnCopyToken.Content?.ToString() == "Copied")
+            {
+                BtnCopyToken.Content = "Copy";
             }
         }
 
@@ -371,6 +406,20 @@ namespace KombitWpfOIDC
         {
             get => _isAuthenticated;
             set { _isAuthenticated = value; OnPropertyChanged(); }
+        }
+
+        private string _clientId = string.Empty;
+        public string ClientId
+        {
+            get => _clientId;
+            set { _clientId = value; OnPropertyChanged();  }
+        }
+
+        private string _subject = string.Empty;
+        public string Subject
+        {
+            get => _subject;
+            set { _subject = value; OnPropertyChanged(); }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
