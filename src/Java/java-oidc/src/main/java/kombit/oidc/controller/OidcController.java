@@ -26,8 +26,10 @@ import jakarta.servlet.http.HttpServletRequest;
 
 
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.util.HtmlUtils;
 import java.security.KeyStore;
 import java.security.PrivateKey;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -88,8 +90,31 @@ public class OidcController {
         }
         Optional<String> codeChallengeOpt = Optional.ofNullable(codeChallenge);
 
-        String url = cfg.buildAuthorizeUrl(state,nonce,acrOpt,maxAgeOpt,codeChallengeOpt);
-        res.sendRedirect(url);
+        if (cfg.authorizationEndpointMethod() == OidcProperties.AuthorizationMethod.POST) {
+            // POST: write a self-submitting HTML form so the browser POSTs to the authorization endpoint
+            MultiValueMap<String, String> form = cfg.buildAuthorizeForm(state, nonce, acrOpt, maxAgeOpt, codeChallengeOpt);
+
+            res.setContentType("text/html;charset=UTF-8");
+            StringBuilder html = new StringBuilder();
+            html.append("<!DOCTYPE html><html><body onload=\"document.forms[0].submit()\">\n");
+            html.append("<form method=\"POST\" action=\"").append(HtmlUtils.htmlEscape(cfg.authorizationEndpoint())).append("\">\n");
+            for (Map.Entry<String, List<String>> entry : form.entrySet()) {
+                for (String value : entry.getValue()) {
+                    html.append("  <input type=\"hidden\" name=\"")
+                        .append(HtmlUtils.htmlEscape(entry.getKey()))
+                        .append("\" value=\"")
+                        .append(HtmlUtils.htmlEscape(value))
+                        .append("\"/>\n");
+                }
+            }
+            html.append("  <noscript><button type=\"submit\">Continue</button></noscript>\n");
+            html.append("</form></body></html>");
+            res.getWriter().write(html.toString());
+        } else {
+            // GET: standard redirect
+            String url = cfg.buildAuthorizeUrl(state, nonce, acrOpt, maxAgeOpt, codeChallengeOpt);
+            res.sendRedirect(url);
+        }
     }
 
     @GetMapping("/oidc/callback")
