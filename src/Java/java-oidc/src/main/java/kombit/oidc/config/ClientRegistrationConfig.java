@@ -11,12 +11,20 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 @Configuration
 public class ClientRegistrationConfig {
 
+    private ClientAuthenticationMethod resolveClientAuthMethod(OidcProperties.TokenAuthMethod method) {
+        return switch (method) {
+            case CLIENT_SECRET_BASIC -> ClientAuthenticationMethod.CLIENT_SECRET_BASIC;
+            case PRIVATE_KEY_JWT     -> ClientAuthenticationMethod.PRIVATE_KEY_JWT;
+            default                  -> ClientAuthenticationMethod.CLIENT_SECRET_POST;
+        };
+    }
+
     @Bean
     public ClientRegistrationRepository clientRegistrationRepository(OidcProperties props) {
         ClientRegistration registration = ClientRegistration.withRegistrationId(props.getRegistrationId())
                 .clientId(props.getClientId())
                 .clientSecret(props.getClientSecret())
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
+                .clientAuthenticationMethod(resolveClientAuthMethod(props.getTokenAuthMethod()))
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
                 .scope(props.getScope().split(","))
