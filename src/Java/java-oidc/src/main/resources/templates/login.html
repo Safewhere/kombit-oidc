@@ -122,6 +122,37 @@
             font-size:15px;color:#0b1225;border-radius:12px;
             padding: 14px 14px 14px 40px;
         }
+        .error-box{
+            margin-top:18px;
+            padding:14px 16px;
+            background:#fff0f0;
+            border:1.5px solid #ffc5c5;
+            border-radius:12px;
+            color:#b91c1c;
+            font-size:14px;
+            line-height:1.5;
+        }
+        .error-box .error-code{
+            font-weight:700;
+            display:block;
+            margin-bottom:4px;
+            text-transform:uppercase;
+            letter-spacing:.4px;
+            font-size:13px;
+        }
+        .error-box .error-desc{
+            display:block;
+            color:#7f1d1d;
+        }
+        .error-box .error-uri{
+            display:block;
+            margin-top:8px;
+            font-size:12px;
+            color:#9ca3af;
+            word-break:break-all;
+            text-decoration:none;
+        }
+        .error-box .error-uri:hover{ text-decoration:underline; }
     </style>
 </head>
 <body>
@@ -184,6 +215,14 @@
                 </div>
             </div>
         </form>
+
+        <!-- OAuth2 authorization error -->
+        <div th:if="${oidcError}" class="error-box" role="alert">
+            <span class="error-code" th:text="${oidcError}"></span>
+            <span class="error-desc" th:if="${oidcErrorDescription}" th:text="${oidcErrorDescription}"></span>
+            <a class="error-uri" th:if="${oidcErrorUri}" th:href="${oidcErrorUri}"
+               th:text="${oidcErrorUri}" target="_blank" rel="noopener noreferrer"></a>
+        </div>
     </section>
 </div>
 
