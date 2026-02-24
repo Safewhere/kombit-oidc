@@ -23,11 +23,15 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.util.HtmlUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.KeyStore;
 import java.security.PrivateKey;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -88,12 +92,51 @@ public class OidcController {
         }
         Optional<String> codeChallengeOpt = Optional.ofNullable(codeChallenge);
 
-        String url = cfg.buildAuthorizeUrl(state,nonce,acrOpt,maxAgeOpt,codeChallengeOpt);
-        res.sendRedirect(url);
+        if (cfg.authorizationEndpointMethod() == OidcProperties.AuthorizationMethod.POST) {
+            // POST: write a self-submitting HTML form so the browser POSTs to the authorization endpoint
+            MultiValueMap<String, String> form = cfg.buildAuthorizeForm(state, nonce, acrOpt, maxAgeOpt, codeChallengeOpt);
+
+            res.setContentType("text/html;charset=UTF-8");
+            StringBuilder html = new StringBuilder();
+            html.append("<!DOCTYPE html><html><body onload=\"document.forms[0].submit()\">\n");
+            html.append("<form method=\"POST\" action=\"").append(HtmlUtils.htmlEscape(cfg.authorizationEndpoint())).append("\">\n");
+            for (Map.Entry<String, List<String>> entry : form.entrySet()) {
+                for (String value : entry.getValue()) {
+                    html.append("  <input type=\"hidden\" name=\"")
+                        .append(HtmlUtils.htmlEscape(entry.getKey()))
+                        .append("\" value=\"")
+                        .append(HtmlUtils.htmlEscape(value))
+                        .append("\"/>\n");
+                }
+            }
+            html.append("  <noscript><button type=\"submit\">Continue</button></noscript>\n");
+            html.append("</form></body></html>");
+            res.getWriter().write(html.toString());
+        } else {
+            // GET: standard redirect
+            String url = cfg.buildAuthorizeUrl(state, nonce, acrOpt, maxAgeOpt, codeChallengeOpt);
+            res.sendRedirect(url);
+        }
     }
 
     @GetMapping("/oidc/callback")
-    public String callback(HttpServletRequest req, HttpSession session, Map<String, Object> model) throws Exception {
+    public String callback(HttpServletRequest req, HttpSession session, Map<String, Object> model,
+                           RedirectAttributes redirectAttributes) throws Exception {
+
+        // OAuth2 / OIDC error response — redirect back to login with the error details
+        String errorCode = req.getParameter("error");
+        if (errorCode != null && !errorCode.isBlank()) {
+            String errorDescription = req.getParameter("error_description");
+            String errorUri         = req.getParameter("error_uri");
+            log.warn("Authorization error returned from IdP: {} – {}", errorCode, errorDescription);
+            redirectAttributes.addFlashAttribute("oidcError", errorCode);
+            redirectAttributes.addFlashAttribute("oidcErrorDescription", errorDescription);
+            if (errorUri != null && !errorUri.isBlank()) {
+                redirectAttributes.addFlashAttribute("oidcErrorUri", errorUri);
+            }
+            return "redirect:/";
+        }
+
         String code  = req.getParameter("code");
         String state = req.getParameter("state");
 
@@ -109,24 +152,46 @@ public class OidcController {
             return "redirect:/home";
         }
 
-        Map<String, Object> token = exchangeAuthCodeForToken(code, codeVerifier);
+        try {
+            Map<String, Object> token = exchangeAuthCodeForToken(code, codeVerifier);
 
-        String accessToken = (String) token.get("access_token");
-        String idToken     = (String) token.getOrDefault("id_token", "");
-        String refresh     = (String) token.getOrDefault("refresh_token", "");
+            String accessToken = (String) token.get("access_token");
+            String idToken     = (String) token.getOrDefault("id_token", "");
+            String refresh     = (String) token.getOrDefault("refresh_token", "");
 
-        idToken = openIdCryptoService.decryptIfNeeded(idToken);
+            idToken = openIdCryptoService.decryptIfNeeded(idToken);
 
-        Map<String, Object> idClaims = parseIdToken(idToken);
-        session.setAttribute("access_token", accessToken);
-        session.setAttribute("id_token", idToken);
-        session.setAttribute("refresh_token", refresh);
-        session.setAttribute("idClaims", idClaims);
+            Map<String, Object> idClaims = parseIdToken(idToken);
+            session.setAttribute("access_token", accessToken);
+            session.setAttribute("id_token", idToken);
+            session.setAttribute("refresh_token", refresh);
+            session.setAttribute("idClaims", idClaims);
 
-        TokenBundle tokens = new TokenBundle(accessToken, refresh, idToken);
-        session.setAttribute("TOKENS", tokens);
+            TokenBundle tokens = new TokenBundle(accessToken, refresh, idToken);
+            session.setAttribute("TOKENS", tokens);
 
-        return "redirect:/home";
+            return "redirect:/home";
+
+        } catch (WebClientResponseException e) {
+            log.error("Token endpoint error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            String errCode = "token_request_failed";
+            String errDesc = "Token request failed (HTTP " + e.getStatusCode().value() + ")";
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = new ObjectMapper().readValue(e.getResponseBodyAsString(), Map.class);
+                if (body.get("error") instanceof String s)             errCode = s;
+                if (body.get("error_description") instanceof String s) errDesc = s;
+            } catch (Exception ignored) {}
+            redirectAttributes.addFlashAttribute("oidcError", errCode);
+            redirectAttributes.addFlashAttribute("oidcErrorDescription", errDesc);
+            return "redirect:/";
+
+        } catch (Exception e) {
+            log.error("Token exchange error: {}", e.getMessage(), e);
+            redirectAttributes.addFlashAttribute("oidcError", "token_request_failed");
+            redirectAttributes.addFlashAttribute("oidcErrorDescription", e.getMessage());
+            return "redirect:/";
+        }
     }
 
     private Map<String, Object> exchangeAuthCodeForToken(String code, String codeVerifier) throws Exception {

@@ -78,7 +78,6 @@ All OIDC configuration is centralized in `src/main/resources/application.yml` un
 | `redirect-uri` | Callback URL after authentication | `https://localhost:8000/oidc/callback` |
 | `scope` | OAuth2 scopes | `openid` |
 | `token-auth-method` | Token endpoint authentication method | `client_secret_post`, `client_secret_basic`, or `private_key_jwt` |
-| `use-pkce` | Enable PKCE for authorization code flow | `true` |
 | `authorization-endpoint-method` | HTTP method for authorization endpoint | `POST` |
 | `id-token-decryption-cert-path` | Path to PKCS12 certificate for decrypting encrypted ID tokens | `path/to/decrypt-cert.p12` |
 | `id-token-decryption-cert-password` | Password for the decryption certificate | `your-password` |
@@ -114,7 +113,7 @@ The application runs on HTTPS by default. For development purposes, a self-signe
 
 - **Port already in use**: Change the port in `application.yml` under `server.port`
 - **SSL certificate issues**: For development, your browser may show security warnings for self-signed certificates - this is expected
-- **OIDC connection issues**: Verify your issuer URI is correct and accessible
+- **OIDC connection issues**: Verify your issuer URI is correct and accessible.
 - **401 Unauthorized errors**: 
   - Verify your `client-id` and `client-secret` are correct
   - Check that `token-auth-method` matches your OIDC provider's requirements:
@@ -131,6 +130,9 @@ The application runs on HTTPS by default. For development purposes, a self-signe
   - If provider encrypts ID tokens, configure `id-token-decryption-cert-path` and `id-token-decryption-cert-password`
   - Ensure the provider has your public key (use=\"enc\") in their jwks/jwks_uri
   - Verify the certificate corresponds to the public key used by the provider
+- **URI configuration**:
+  - Ensure `redirect-uri` is registered with your OIDC provider and matches exactly (including scheme and port)
+  - OpenID Connect logout redirect URL: https://localhost:8000/logout/callback
 
 ## Project Structure
 

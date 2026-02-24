@@ -33,42 +33,39 @@ public class OpenIdCryptoService {
 
     @PostConstruct
     public void init() throws Exception {
-        // Skip initialization if keystore paths are not configured
-        if (cfg.jwtAssertionSigningCertPath() == null || cfg.jwtAssertionSigningCertPath().isEmpty()) {
-            return;
-        }
-        if (cfg.idTokenDecryptionCertPath() == null || cfg.idTokenDecryptionCertPath().isEmpty()) {
-            return;
+        // Load JWT assertion signing cert (only required for private_key_jwt auth method)
+        if (cfg.jwtAssertionSigningCertPath() != null && !cfg.jwtAssertionSigningCertPath().isEmpty()) {
+            KeyStore verifyKs = KeyStore.getInstance("PKCS12");
+            try (FileInputStream fis = new FileInputStream(cfg.jwtAssertionSigningCertPath())) {
+                verifyKs.load(fis, cfg.jwtAssertionSigningCertPassword().toCharArray());
+            }
+            String certAlias = firstCertificateAlias(verifyKs);
+            if (certAlias == null) {
+                throw new KeyStoreException("No certificate alias found in jwtSigning keystore.");
+            }
+            Certificate verifyCert = verifyKs.getCertificate(certAlias);
+            if (verifyCert == null || !(verifyCert.getPublicKey() instanceof RSAPublicKey)) {
+                throw new IllegalStateException("Cannot load RSA public key for JWS verification.");
+            }
+            jwtVerifyPublicKey = (RSAPublicKey) verifyCert.getPublicKey();
         }
 
-        KeyStore verifyKs = KeyStore.getInstance("PKCS12");
-        try (FileInputStream fis = new FileInputStream(cfg.jwtAssertionSigningCertPath())) {
-            verifyKs.load(fis, cfg.jwtAssertionSigningCertPassword().toCharArray());
+        // Load ID token decryption cert (only required when IdP encrypts ID tokens)
+        if (cfg.idTokenDecryptionCertPath() != null && !cfg.idTokenDecryptionCertPath().isEmpty()) {
+            KeyStore decryptKs = KeyStore.getInstance("PKCS12");
+            try (FileInputStream fis = new FileInputStream(cfg.idTokenDecryptionCertPath())) {
+                decryptKs.load(fis, cfg.idTokenDecryptionCertPassword().toCharArray());
+            }
+            String keyAlias = firstPrivateKeyAlias(decryptKs);
+            if (keyAlias == null) {
+                throw new KeyStoreException("No private key alias found in idToken keystore.");
+            }
+            Key pkey = decryptKs.getKey(keyAlias, cfg.idTokenDecryptionCertPassword().toCharArray());
+            if (!(pkey instanceof RSAPrivateKey)) {
+                throw new IllegalStateException("Private key is not RSA; unsupported for RSA_* JWE.");
+            }
+            idTokenDecryptKey = (RSAPrivateKey) pkey;
         }
-        String certAlias = firstCertificateAlias(verifyKs);
-        if (certAlias == null) {
-            throw new KeyStoreException("No certificate alias found in jwtSigning keystore.");
-        }
-        Certificate verifyCert = verifyKs.getCertificate(certAlias);
-        if (verifyCert == null || !(verifyCert.getPublicKey() instanceof RSAPublicKey)) {
-            throw new IllegalStateException("Cannot load RSA public key for JWS verification.");
-        }
-        jwtVerifyPublicKey = (RSAPublicKey) verifyCert.getPublicKey();
-
-
-        KeyStore decryptKs = KeyStore.getInstance("PKCS12");
-        try (FileInputStream fis = new FileInputStream(cfg.idTokenDecryptionCertPath())) {
-            decryptKs.load(fis, cfg.idTokenDecryptionCertPassword().toCharArray());
-        }
-        String keyAlias = firstPrivateKeyAlias(decryptKs);
-        if (keyAlias == null) {
-            throw new KeyStoreException("No private key alias found in idToken keystore.");
-        }
-        Key pkey = decryptKs.getKey(keyAlias, cfg.idTokenDecryptionCertPassword().toCharArray());
-        if (!(pkey instanceof RSAPrivateKey)) {
-            throw new IllegalStateException("Private key is not RSA; unsupported for RSA_* JWE.");
-        }
-        idTokenDecryptKey = (RSAPrivateKey) pkey;
     }
 
 
