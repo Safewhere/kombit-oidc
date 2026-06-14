@@ -8,6 +8,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -199,7 +200,12 @@ public class OidcClientConfig {
 
 
     public static String basicAuth(String clientId, String clientSecret) {
-        String pair = clientId + ":" + clientSecret;
+        // Per RFC 6749 §2.3.1, both client_id and client_secret must be
+        // application/x-www-form-urlencoded before being Base64-encoded.
+        // This is required when the client_id contains characters like ':', '/', etc.
+        String encodedId = URLEncoder.encode(clientId, StandardCharsets.UTF_8);
+        String encodedSecret = URLEncoder.encode(clientSecret, StandardCharsets.UTF_8);
+        String pair = encodedId + ":" + encodedSecret;
         String b64 = Base64.getEncoder().encodeToString(pair.getBytes(StandardCharsets.UTF_8));
         return "Basic " + b64;
     }
