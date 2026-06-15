@@ -204,25 +204,28 @@ public class OidcController {
             form.add("code_verifier", codeVerifier);
         }
 
-        cfg.tokenAuthMethod();
         log.info("Using authentication method: {}", cfg.tokenAuthMethod());
-        
-        if (cfg.tokenAuthMethod() == OidcProperties.TokenAuthMethod.PRIVATE_KEY_JWT){
+
+        if (cfg.tokenAuthMethod() == OidcProperties.TokenAuthMethod.private_key_jwt) {
             String clientAssertion = buildClientAssertion(cfg.clientId(), cfg.tokenEndpoint(),
                     cfg.jwtAssertionSigningCertPath(), cfg.jwtAssertionSigningCertPassword());
             form.add("client_assertion_type",
                     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
             form.add("client_assertion", clientAssertion);
+            form.add("client_id", cfg.clientId());
             log.info("Added client_assertion to request (private_key_jwt authentication)");
-        } else {
+        } else if (cfg.tokenAuthMethod() == OidcProperties.TokenAuthMethod.client_secret_post) {
             form.add("client_id", cfg.clientId());
             form.add("client_secret", cfg.clientSecret());
-            log.info("Added client_id and client_secret to request ({} authentication)", cfg.tokenAuthMethod());
+            log.info("Added client_id and client_secret to request body (client_secret_post authentication)");
+        } else {
+            // client_secret_basic: credentials go in Authorization header only, not in body
+            log.info("Using Basic Auth header for client_secret_basic authentication");
         }
 
         log.info("Exchanging code for token at: {}", cfg.tokenEndpoint());
         log.info("Complete form parameters: {}", form.toSingleValueMap().keySet());
-        log.info("Request parameters: grant_type=authorization_code, redirect_uri={}, has_code={}, has_code_verifier={}", 
+        log.info("Request parameters: grant_type=authorization_code, redirect_uri={}, has_code={}, has_code_verifier={}",
             cfg.redirectUri(), code != null, codeVerifier != null);
 
         try {
@@ -230,6 +233,7 @@ public class OidcController {
                     .uri(cfg.tokenEndpoint())
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .accept(MediaType.APPLICATION_JSON)
+                    .headers(h -> h.addAll(cfg.tokenHeaders()))
                     .body(BodyInserters.fromFormData(form))
                     .retrieve()
                     .bodyToMono(Map.class)

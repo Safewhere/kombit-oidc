@@ -8,6 +8,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -122,16 +123,16 @@ public class OidcClientConfig {
         }
 
         switch (p.getTokenAuthMethod()) {
-            case CLIENT_SECRET_POST -> {
+            case client_secret_post -> {
                 form.add("client_id", p.getClientId());
                 form.add("client_secret", p.getClientSecret());
             }
-            case PRIVATE_KEY_JWT -> {
+            case private_key_jwt -> {
                 // form.add("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
                 // form.add("client_assertion", signedAssertion);
                 form.add("client_id", p.getClientId());
             }
-            case CLIENT_SECRET_BASIC -> {
+            case client_secret_basic -> {
 
             }
         }
@@ -144,16 +145,16 @@ public class OidcClientConfig {
         form.add("refresh_token", refreshToken);
 
         switch (p.getTokenAuthMethod()) {
-            case CLIENT_SECRET_POST -> {
+            case client_secret_post -> {
                 form.add("client_id", p.getClientId());
                 form.add("client_secret", p.getClientSecret());
             }
-            case PRIVATE_KEY_JWT -> {
+            case private_key_jwt -> {
                 // form.add("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
                 // form.add("client_assertion", signedAssertion);
                 form.add("client_id", p.getClientId());
             }
-            case CLIENT_SECRET_BASIC -> {
+            case client_secret_basic -> {
                 // dùng Basic Auth header
             }
         }
@@ -164,7 +165,7 @@ public class OidcClientConfig {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-        if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.CLIENT_SECRET_BASIC) {
+        if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.client_secret_basic) {
             headers.set(HttpHeaders.AUTHORIZATION, basicAuth(p.getClientId(), p.getClientSecret()));
         }
         return headers;
@@ -177,10 +178,10 @@ public class OidcClientConfig {
             form.add("token_type_hint", tokenTypeHint); // access_token|refresh_token
         }
 
-        if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.CLIENT_SECRET_POST) {
+        if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.client_secret_post) {
             form.add("client_id", p.getClientId());
             form.add("client_secret", p.getClientSecret());
-        } else if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.PRIVATE_KEY_JWT) {
+        } else if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.private_key_jwt) {
             // form.add("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
             // form.add("client_assertion", signedAssertion);
             form.add("client_id", p.getClientId());
@@ -191,7 +192,7 @@ public class OidcClientConfig {
     public HttpHeaders revokeHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.CLIENT_SECRET_BASIC) {
+        if (p.getTokenAuthMethod() == OidcProperties.TokenAuthMethod.client_secret_basic) {
             headers.set(HttpHeaders.AUTHORIZATION, basicAuth(p.getClientId(), p.getClientSecret()));
         }
         return headers;
@@ -199,7 +200,12 @@ public class OidcClientConfig {
 
 
     public static String basicAuth(String clientId, String clientSecret) {
-        String pair = clientId + ":" + clientSecret;
+        // Per RFC 6749 §2.3.1, both client_id and client_secret must be
+        // application/x-www-form-urlencoded before being Base64-encoded.
+        // This is required when the client_id contains characters like ':', '/', etc.
+        String encodedId = URLEncoder.encode(clientId, StandardCharsets.UTF_8);
+        String encodedSecret = URLEncoder.encode(clientSecret, StandardCharsets.UTF_8);
+        String pair = encodedId + ":" + encodedSecret;
         String b64 = Base64.getEncoder().encodeToString(pair.getBytes(StandardCharsets.UTF_8));
         return "Basic " + b64;
     }

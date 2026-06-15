@@ -34,7 +34,7 @@ public class OidcProperties {
     private String clientSecret;
 
     @org.jetbrains.annotations.NotNull
-    private TokenAuthMethod tokenAuthMethod = TokenAuthMethod.CLIENT_SECRET_POST;
+    private TokenAuthMethod tokenAuthMethod;
 
     private boolean usePkce = true;
     private AuthorizationMethod authorizationEndpointMethod = AuthorizationMethod.POST;
@@ -55,9 +55,9 @@ public class OidcProperties {
     private String jwtAssertionSigningCertPassword;
 
     public enum TokenAuthMethod {
-        CLIENT_SECRET_POST,
-        CLIENT_SECRET_BASIC,
-        PRIVATE_KEY_JWT
+        client_secret_post,
+        client_secret_basic,
+        private_key_jwt
     }
     public enum AuthorizationMethod {
         POST,

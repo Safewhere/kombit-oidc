@@ -13,8 +13,8 @@ public class ClientRegistrationConfig {
 
     private ClientAuthenticationMethod resolveClientAuthMethod(OidcProperties.TokenAuthMethod method) {
         return switch (method) {
-            case CLIENT_SECRET_BASIC -> ClientAuthenticationMethod.CLIENT_SECRET_BASIC;
-            case PRIVATE_KEY_JWT     -> ClientAuthenticationMethod.PRIVATE_KEY_JWT;
+            case client_secret_basic -> ClientAuthenticationMethod.CLIENT_SECRET_BASIC;
+            case private_key_jwt     -> ClientAuthenticationMethod.PRIVATE_KEY_JWT;
             default                  -> ClientAuthenticationMethod.CLIENT_SECRET_POST;
         };
     }
