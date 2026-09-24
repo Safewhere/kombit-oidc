@@ -1,7 +1,7 @@
 # Introduction
 This project contains sample code for OAuth2 and OpenID Connect using ASP.NET Core. The application is built for demonstration and testing purposes, particularly within KOMBIT projects.
 
-To run this sample, you will need to install [ASP.NET Core Runtime 8](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-aspnetcore-8.0.15-windows-hosting-bundle-installer).
+To build and test this sample, install the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0). To run a framework-dependent published application, install the ASP.NET Core Runtime 10; for IIS, install the .NET 10 Hosting Bundle from the same download page. Use an IDE version that supports .NET 10.
 
 By default, all the necessary configurations for running this application are already set up for one-click execution in Visual Studio. These configurations are placed in the "appsettings.json" file. This application supports the following features:
 
