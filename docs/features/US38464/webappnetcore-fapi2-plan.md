@@ -1,6 +1,6 @@
 # US38464: FAPI 2.0 building blocks in the WebAppNetCore sample
 
-Status: Draft for review, 14 October 2026. Target: [`src/CSharp/WebAppNetCore`](../../../src/CSharp/WebAppNetCore) on .NET 10, with `Microsoft.AspNetCore.Authentication.OpenIdConnect` 10.0.12 and `Microsoft.IdentityModel` 8.19.2.
+Status: Implemented on 14 October 2026; waits for review and the live verification. [Section 12](#12-implementation-status) records the commits and the differences from the plan. Target: [`src/CSharp/WebAppNetCore`](../../../src/CSharp/WebAppNetCore) on .NET 10, with `Microsoft.AspNetCore.Authentication.OpenIdConnect` 10.0.12 and `Microsoft.IdentityModel` 8.19.2.
 
 ## 1. Context
 
@@ -339,3 +339,37 @@ After Stage C, run the sample against an Identify Runtime built from `feature/38
 - OIDC session management together with required PAR.
 - Token revocation at sign-out.
 - The Java, JavaScript, and WPF samples.
+
+## 12. Implementation status
+
+Last update: 14 October 2026. Branch `feature/38464-fapi`. The decisions in section 3 were implemented as proposed. All work packages are committed. Nothing is pushed. The test project has 85 tests, and all pass.
+
+| WP | Commit | Tests added |
+|---|---|---|
+| Plan | `8912fc0` | None |
+| WP1 Stub Identify | `b507b93` | The current code flow end to end |
+| WP2 Refactor code redemption | `c69f9ee` | The three client authentication methods, the token endpoint from discovery, the error page, the issuer check, and the ID token nonce |
+| WP3 Client hygiene | `24b53c1` | POST sign-in, the 43-character nonce, ID token algorithms, UserInfo claims, signed UserInfo, and the UserInfo `sub` check |
+| WP4 Client assertion | `54cfc1d` | `aud` as one JSON string, PS256, and invalid values |
+| WP5 PAR | `f66d34f` | The pushed parameters, the browser parameters for GET and POST, the state order, client authentication, errors, and `UseIfAvailable` |
+| Thread-safety fix | `2fa1697` | 20 concurrent sign-ins |
+| WP6 RFC 9207 | `1ebbf13` | The four `iss` cases and an error response |
+| WP7 DPoP | `e11f416` | The RFC 7638 vector, the proof contents, the key of each step, the nonce retries, and the `token_type` check |
+| WP8 Refresh and home page | `ddf7e7d` | Refresh, UserInfo, the protocol panels, redaction, warnings, and a lost session state |
+| WP9 Fault injection | `b6d982e` | Each fault against the stub |
+| WP10 Documentation | This commit | None |
+
+Differences from the plan and facts found during the implementation:
+
+- The handler skips `ValidateTokenResponse` when the application redeems the code (`HandledCodeRedemption`). The sample therefore did not check the ID token nonce before, although `RequireNonce` was true. `OnTokenValidated` now calls `ValidateTokenResponse`. A test shows that an ID token with another nonce failed before the change and fails now.
+- `OpenIdConnectHelper.LiveSessions` was a static `Dictionary` that every sign-in writes. Concurrent sign-ins corrupted it ("Operations that change non-concurrent collections must have exclusive access"). It is a `ConcurrentDictionary` now, in a separate commit. The concurrency test fails in most runs with the old type.
+- `OpenIdConnectMessage.CreateAuthenticationRequestUrl()` adds the telemetry parameters `x-client-SKU` and `x-client-ver`. After a push, the browser request would carry them next to `request_uri`. `DisableTelemetry` is true now, also for direct requests.
+- The PAR event allows only one of `HandlePush`, `SkipPush`, and `HandleClientAuthentication`. The sample calls only `HandlePush`; the handler then sends nothing itself.
+- The plan put the result of a UserInfo or refresh action in the protocol panel. It is at the top of the home page instead, because the token display above the panel is long.
+- The stub Identify uses the Runtime path layout (`/runtime/oauth2/...`), so that WP1 could test the earlier code, which built the token URL from `IssuerDomain`.
+- `/test/session` exists only in the test host. It returns the claims, tokens, and items of the cookie session.
+
+Open items:
+
+- The review of each stage by the user.
+- The live verification in section 8, including the WP9 rows marked "verify".

@@ -25,6 +25,10 @@ By default, all the necessary configurations for running this application are al
 
 - Supports ID token encryption.
 
+- Supports the OAuth building blocks that Identify uses for FAPI 2.0: pushed authorization requests (PAR), DPoP-bound access tokens, DPoP binding of the authorization code, the RFC 9207 `iss` check, and configurable client assertions. See [OAuth building blocks and FAPI 2.0](#oauth-building-blocks-and-fapi-20).
+
+- Supports refresh and UserInfo calls from the home page, with a protocol trace, and fault injection for negative tests.
+
 # Configurations
 
 ## Enable OpenID Connect session management
@@ -50,15 +54,21 @@ For both GET and POST logout requests, the /Account/SignedOutCallback endpoint s
 
 - Edit "appsettings.json" and change the setting AuthorizationEndpointMethod to "GET" or "POST"
 
+The sign-in buttons post a form with an antiforgery token to /Account/SignIn, so that a cross-site request cannot start a sign-in.
+
 ## Support configurable Token Authentication method
 
 - Edit "appsettings.json" and change the setting TokenAuthnMethod to "client_secret_post", "client_secret_basic", or "private_key_jwt". 
+
+The same method applies at the PAR endpoint.
 
 ## Private Key JWT client authentication
 - When using "private_key_jwt", you must provide the jwks or jwks_uri for the Identify OAuth/OIDC connection.
 - You also need to provide the certificate to sign the client_assertion by configuring these two settings in "appsettings.json":
   - JwtAssertionSigningCertPath
   - JwtAssertionSigningCertPassword
+- The `kid` of the client assertion is the base64url SHA-1 hash of the certificate. The key in the jwks must have the same `kid`.
+- `ClientAssertion:Audience` and `ClientAssertion:SigningAlgorithm` set the `aud` and `alg` of the assertion. See [settings](#settings).
 
 ## ID token encryption
 
@@ -74,3 +84,166 @@ So the jwks or jwks_uri must contain the public certificate in a key (use="enc")
 ## Back-channel & Front-channel logout
 
 When enabling back-channel or front-channel logout on the Identify's OIDC connection, you must disable the EnableSessionManagement by setting it to "false".
+
+# OAuth building blocks and FAPI 2.0
+
+Identify implements section 5 of the [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-security-profile-2_0-final.html#section-5) as independent building blocks, not as a FAPI profile. This sample follows the same approach. Each block has its own setting, or it is always available. No setting turns on another setting, and no code checks for "FAPI". You combine the blocks to match the Identify connection that you test.
+
+The Identify documents are in the Identify repository, in `docs/features/US38464/`. The configuration guide `fapi2-configuration-guide.md` describes the Identify connection for FAPI 2.0. The plan for this sample is [webappnetcore-fapi2-plan.md](../../../../docs/features/US38464/webappnetcore-fapi2-plan.md).
+
+## Settings
+
+All keys are in the `OpenIdConnectOptions` section, except the last one. The defaults keep the earlier behavior. An invalid value stops the application at startup, so that a misspelled value never reads as "off".
+
+| Setting | Values, default | Standard | Behavior |
+|---|---|---|---|
+| `PushedAuthorization` | `Disable`, `UseIfAvailable`, `Require`; default `Disable` | RFC 9126 | When the request is pushed, the browser gets only `client_id` and `request_uri`. Identify always publishes `require_pushed_authorization_requests=false`, so use `Require` for a connection that requires PAR. |
+| `ClientAssertion:Audience` | `TokenEndpoint`, `Issuer`; default `TokenEndpoint` | RFC 7523 | The `aud` of the client assertion at the token and PAR endpoints. `Issuer` sends the discovered issuer as one JSON string, as the Identify rule `clientAssertion.audience=issuer` requires. |
+| `ClientAssertion:SigningAlgorithm` | `RS256` to `PS512`; default `RS256` | FAPI 5.4.1 | The `alg` of the client assertion. |
+| `DPoP:BindAccessTokens` | `true`, `false`; default `false` | RFC 9449 section 5 | Every token request (code and refresh) carries a DPoP proof. A token response with a `token_type` other than `DPoP` fails. |
+| `DPoP:SendDPoPJkt` | `true`, `false`; default `false` | RFC 9449 section 10 | The authorization request, pushed or direct, carries `dpop_jkt`, so Identify binds the code to the key. |
+| `DPoP:SendProofToParEndpoint` | `true`, `false`; default `false` | RFC 9449 section 10.1 | The PAR request carries a DPoP proof, so Identify binds the code to the key. No effect on a direct request. |
+| `DPoP:SigningAlgorithm` | `RS256` to `PS512`; default `PS256` | FAPI 5.4.1 | The `alg` of DPoP proofs. |
+| `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
+| `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
+
+These capabilities have no setting:
+
+- The token, PAR, and UserInfo endpoints come from the discovery document. The discovered `issuer` must equal `ClaimsIssuer`.
+- A present `iss` in the authorization response must equal the discovered issuer. When discovery has `authorization_response_iss_parameter_supported=true`, a missing `iss` fails (RFC 9207).
+- The nonce has 43 characters (FAPI 2.0 allows at most 64), and the ID token nonce is checked against the nonce cookie of the browser.
+- Each sign-in gets a new RSA 2048 DPoP key. All proofs of the sign-in use it: PAR, token, refresh, and UserInfo.
+- UserInfo uses the DPoP scheme and a proof with `ath` for a DPoP-bound access token, and the Bearer scheme otherwise.
+- After a DPoP nonce challenge (`use_dpop_nonce`), the sample retries once with the nonce (RFC 9449 sections 8 and 9). Identify does not send nonces, so only the unit tests cover this.
+- Refresh keeps the old refresh token when the response has none, and stores a returned replacement.
+
+## Example: the FAPI 2.0 combination
+
+```json
+"OpenIdConnectOptions": {
+  "TokenAuthnMethod": "private_key_jwt",
+  "ResponseType": "code",
+  "Scope": "openid",
+  "EnableSessionManagement": "false",
+  "PushedAuthorization": "Require",
+  "ClientAssertion": { "Audience": "Issuer", "SigningAlgorithm": "PS256" },
+  "DPoP": { "BindAccessTokens": true, "SendDPoPJkt": true, "SendProofToParEndpoint": false, "SigningAlgorithm": "PS256" },
+  "ValidIdTokenSigningAlgorithms": "PS256"
+}
+```
+
+Keep the certificate passwords out of `appsettings.json`, for example with user secrets:
+
+```bash
+dotnet user-secrets set "OpenIdConnectOptions:JwtAssertionSigningCertPath" "C:\certs\client.pfx"
+```
+
+```bash
+dotnet user-secrets set "OpenIdConnectOptions:JwtAssertionSigningCertPassword" "<password>"
+```
+
+## Identify connection
+
+Configure the OAuth connection as steps 1 to 4 of the Identify configuration guide describe. In short:
+
+1. System Setup, OAuth `additionalRules`: `{"authorize": {"includeIssuerInResponse": true}}`.
+2. Connection: `RequirePushedAuthorizationRequests=true` and `RequireDPoPBoundAccessTokens=true`.
+3. Connection: the code flow only, `TokenEndpointAuthenticationMethod=PrivateKeyJwt`, `IdTokenSigningAlgorithm=PS256`, `IssueNewRefreshTokenForEveryTokenExchange=false`, and `AllowRefreshToken=true` if you want to test refresh.
+4. Connection `AdditionalValidationRules`: PKCE with S256, an HTTPS redirect URI, the code and PAR lifetimes, `clientAssertion.audience=issuer`, and `clientJwt` with `PS256`.
+
+The client keys:
+
+- `ClientJwks` contains the public key of the assertion certificate with `use=sig` and the `kid` that the sample computes (see [Private Key JWT client authentication](#private-key-jwt-client-authentication)). Leave out `alg`, or set it to the value of `ClientAssertion:SigningAlgorithm`, because Identify uses the JWK `alg` as a constraint.
+- The DPoP key is not registered. Each sign-in creates a new one.
+
+The redirect URI is `https://<host>:<port>/signin-oidc`. It must use HTTPS, because the guide sets `AllowHttpRedirect=false`.
+
+## Combinations that cannot succeed
+
+The sample sends what the settings say, so that you can see the Identify response. The startup log and the home page warn about the combinations that the sample can detect alone.
+
+| Sample settings | Identify connection | Result |
+|---|---|---|
+| `SendDPoPJkt=true`, `BindAccessTokens=false` | Any | The code is bound to the key, and the redemption has no proof, so it fails. |
+| `PushedAuthorization=Disable` | `RequirePushedAuthorizationRequests=true` | `invalid_request` at the authorization endpoint. |
+| `ClientAssertion:Audience=TokenEndpoint` | `clientAssertion.audience=issuer` | `invalid_client` at PAR (401) and at the token endpoint. |
+| `ClientAssertion:SigningAlgorithm` not in the rule | `clientJwt.signingAlgorithms` | `invalid_client`. |
+| `DPoP:SigningAlgorithm` not in the rule | `clientJwt.signingAlgorithms` | `invalid_dpop_proof`. |
+| `BindAccessTokens=false` | `RequireDPoPBoundAccessTokens=true` | `invalid_dpop_proof`. |
+| `EnableSessionManagement=true` | `RequirePushedAuthorizationRequests=true` | The session check iframe sends a direct request and gets the Identify error page. |
+
+## The home page
+
+- **OAuth building blocks**: the active settings and the warnings.
+- **Access token**: `token_type`, the `cnf.jkt` of the access token, the thumbprint of the DPoP key of the sign-in, and whether they match.
+- **Call UserInfo** and **Refresh access token**: a UserInfo call with a fresh proof, and a refresh with the key of the sign-in. The result shows at the top of the page.
+- **Pushed authorization request**: the `request_uri` and `expires_in` of the PAR response.
+- **Protocol trace**: each request of the sign-in, with the redacted form, the decoded client assertion and DPoP proof, and the response. Client secrets, code verifiers, and JWT signatures are not shown.
+
+The sample keeps the DPoP key and the trace in memory, for one application instance. After a restart, sign in again before you call UserInfo or refresh with DPoP.
+
+## Fault injection
+
+With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh forms get a fault list. A fault is one deliberate protocol violation in the next request of that action. The expected results come from section 5 of the Identify design; "verify" marks a result that the design does not state.
+
+| Fault | Action | Change | Expected Identify result |
+|---|---|---|---|
+| `SkipPar` | Sign in | A direct authorization request, also when PAR is on | `invalid_request` when the connection requires PAR |
+| `ExtraBrowserParameter` | Sign in | `scope` next to `request_uri` in the browser request (GET only) | An error response (verify) |
+| `AssertionAudienceArray` | Sign in | Client assertion `aud` as a JSON array | `invalid_client` with `clientAssertion.audience=issuer` |
+| `AssertionFutureIat` | Sign in | Client assertion `iat` 120 seconds in the future | `invalid_client` when `clientJwt.clockSkewInSeconds` is below 120 |
+| `ParProofKeyMismatch` | Sign in | A PAR proof of another key than `dpop_jkt` | `invalid_request` |
+| `NoDPoPProof` | Sign in | No proof at the token endpoint | `invalid_dpop_proof` when DPoP is required; an error for a bound code (verify) |
+| `WrongDPoPKey` | Sign in | A token proof of a new key | `invalid_grant` for a bound code |
+| `WrongHtu` | Sign in | A token proof with the authorization endpoint as `htu` | `invalid_dpop_proof` |
+| `SmallDPoPKey` | Sign in | A token proof of an RSA 1024 key | `invalid_dpop_proof` |
+| `RedeemCodeTwice` | Sign in | A second redemption after a successful one | `invalid_grant` for the second; the trace shows it |
+| `BearerAtUserInfo` | Call UserInfo | The Bearer scheme with a DPoP-bound token | `invalid_token` |
+| `MissingAth` | Call UserInfo | A proof without `ath` | `invalid_token` |
+| `ReplayDPoPProof` | Call UserInfo | The same proof in two calls | `invalid_token` for the second call |
+| `NewDPoPKeyOnRefresh` | Refresh | A new key for the refresh request | Success; the new access token has a new `cnf.jkt` |
+
+## Live checklist
+
+Run these checks against an Identify connection that is configured as above. They follow "Check the configuration" in the Identify configuration guide. Live tests against an installation need an approved rules of engagement.
+
+1. Start the sample. The startup log lists the building blocks without warnings.
+2. Sign in. The trace shows the PAR response with HTTP 201 and `expires_in` below 600, the authorization response with "iss check passed", and the token response with `token_type=DPoP`. The access token panel shows "Bound to the key of the sign-in: Yes", and the decoded access token header has `alg` PS256.
+3. Click **Call UserInfo** and **Refresh access token**. Both succeed, and the refresh token is unchanged.
+4. Sign in with the fault `SkipPar`. Identify shows an error (`invalid_request`).
+5. Set `ClientAssertion:Audience` to `TokenEndpoint` and sign in. The error page shows `invalid_client` from the PAR endpoint.
+6. Sign in with the fault `NoDPoPProof`. The error page shows the token error.
+7. Run the other faults of the table, and record the results of the rows marked "verify".
+
+## FAPI 2.0 client requirements
+
+| FAPI item | Setting or capability |
+|---|---|
+| 5.3.3.1-1 sender binding | `DPoP:BindAccessTokens=true`; the faults `WrongDPoPKey` and `BearerAtUserInfo` show the rejection |
+| 5.3.3.1-2 client authentication | `TokenAuthnMethod=private_key_jwt`; the certificate password in user secrets |
+| 5.3.3.1-3 token transport | UserInfo with `Authorization: DPoP` |
+| 5.3.3.1-4 redirect safety | The application redirects only to local paths |
+| 5.3.3.1-5 assertion audience | `ClientAssertion:Audience=Issuer` |
+| 5.3.3.1-6 refresh | **Refresh access token**; replacement storage |
+| 5.3.3.1-7 mTLS aliases | Not applicable; the sample uses DPoP |
+| 5.3.3.1-8 DPoP nonce | Always supported; unit tests only |
+| 5.3.3.1-9 metadata | Endpoints from discovery |
+| 5.3.3.1-10 trusted issuer | `ClaimsIssuer` in the application configuration |
+| 5.3.3.1-11 issuer consistency | The discovered issuer must equal `ClaimsIssuer` |
+| 5.3.3.1-12 initiation protection | POST sign-in with an antiforgery token; the correlation cookie binds the flow to the browser |
+| 5.3.3.1-13 least privileges | `Scope=openid` |
+| 5.3.3.2-1 code grant | `ResponseType=code` |
+| 5.3.3.2-2 PAR | `PushedAuthorization=Require` |
+| 5.3.3.2-3 S256 | Always |
+| 5.3.3.2-4 fresh bound challenge | Always; a new verifier for each flow, protected in `state` |
+| 5.3.3.2-5 response issuer | Always; the RFC 9207 check |
+| 5.3.3.2-6 browser parameters | `PushedAuthorization=Require`; only `client_id` and `request_uri` |
+| 5.3.3.2-7 nonce length | Always; 43 characters |
+| 5.4.1 algorithms | `ClientAssertion:SigningAlgorithm=PS256`, `DPoP:SigningAlgorithm=PS256`, `ValidIdTokenSigningAlgorithms=PS256`; RSA 2048 keys |
+
+## Limitations
+
+- The DPoP key and the trace are in memory, for one application instance.
+- Identify does not support the DPoP server nonce, ES256, EdDSA, or request objects inside PAR, so the sample does not use them. The nonce retry is covered by unit tests only.
+- The sample does not use mTLS, and it has no resource server of its own. Identify UserInfo is the DPoP-protected resource.
+- OIDC session management does not work together with a connection that requires PAR.
