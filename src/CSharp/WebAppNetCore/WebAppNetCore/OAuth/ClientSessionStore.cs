@@ -74,6 +74,9 @@ namespace WebAppNetCore.OAuth
 
         public ProtocolTrace Trace { get; } = new ProtocolTrace();
 
+        /// <summary>The fault of the sign-in (Testing:EnableFaultInjection), or None.</summary>
+        public Fault SignInFault { get; set; }
+
         /// <summary>The claims of the last UserInfo response, as indented JSON.</summary>
         public string LastUserInfo { get; set; }
 

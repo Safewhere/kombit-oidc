@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -105,6 +106,12 @@ namespace WebAppNetCore
                     await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
                     // The handle goes into the state parameter, because the handler protects the properties after this event.
                     var session = services.GetRequiredService<ClientSessionStore>().Create(context.Properties);
+                    session.SignInFault = FaultInjection.Read(context.Properties);
+                    if (session.SignInFault != Fault.None)
+                    {
+                        session.Trace.Add("Fault injection", session.SignInFault + ": " + FaultInjection.Describe(session.SignInFault));
+                    }
+
                     if (configuration.UsesDPoPKey())
                     {
                         // One key for each sign-in. The PAR proof, the token proofs, and the UserInfo proofs of the sign-in use it.
@@ -139,7 +146,15 @@ namespace WebAppNetCore
                     // sends nothing and redirects the browser with client_id and request_uri only. The event allows only one of
                     // HandlePush, SkipPush, and HandleClientAuthentication.
                     var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
-                    var result = await services.GetRequiredService<PushedAuthorizationClient>().PushAsync(context.ProtocolMessage, session, context.HttpContext.RequestAborted);
+                    var fault = session?.SignInFault ?? Fault.None;
+                    if (fault == Fault.SkipPar)
+                    {
+                        // The browser gets the direct authorization request with all parameters.
+                        context.SkipPush();
+                        return;
+                    }
+
+                    var result = await services.GetRequiredService<PushedAuthorizationClient>().PushAsync(context.ProtocolMessage, session, fault, context.HttpContext.RequestAborted);
                     if (session != null)
                     {
                         session.PushedAuthorization = result;
@@ -150,6 +165,21 @@ namespace WebAppNetCore
                         });
                     }
                     context.HandlePush(result.RequestUri);
+                    if (fault == Fault.ExtraBrowserParameter)
+                    {
+                        // The handler writes the redirect after this event, so the parameter is added when the response starts.
+                        var response = context.HttpContext.Response;
+                        var scope = string.Join(" ", context.Options.Scope);
+                        response.OnStarting(() =>
+                        {
+                            var location = response.Headers.Location.ToString();
+                            if (!string.IsNullOrEmpty(location))
+                            {
+                                response.Headers.Location = QueryHelpers.AddQueryString(location, "scope", scope);
+                            }
+                            return Task.CompletedTask;
+                        });
+                    }
                 },
                 OnRedirectToIdentityProviderForSignOut = async (context) =>
                 {
@@ -188,13 +218,38 @@ namespace WebAppNetCore
                     Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
 
                     var services = context.HttpContext.RequestServices;
-                    var tokenResponse = await services.GetRequiredService<TokenClient>().RedeemCodeAsync(
+                    var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
+                    var fault = session?.SignInFault ?? Fault.None;
+                    var tokenClient = services.GetRequiredService<TokenClient>();
+                    var tokenResponse = await tokenClient.RedeemCodeAsync(
                         context.ProtocolMessage.Code,
                         context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey],
                         context.TokenEndpointRequest.Parameters["code_verifier"],
                         context.ProtocolMessage.SessionState,
-                        services.GetRequiredService<ClientSessionStore>().Get(context.Properties),
+                        session,
+                        fault,
                         context.HttpContext.RequestAborted);
+
+                    if (fault == Fault.RedeemCodeTwice)
+                    {
+                        // The trace shows the response to the second redemption. The sign-in continues with the first response.
+                        try
+                        {
+                            await tokenClient.RedeemCodeAsync(
+                                context.ProtocolMessage.Code,
+                                context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey],
+                                context.TokenEndpointRequest.Parameters["code_verifier"],
+                                context.ProtocolMessage.SessionState,
+                                session,
+                                Fault.None,
+                                context.HttpContext.RequestAborted);
+                            session?.Trace.Add("Fault injection", "RedeemCodeTwice: the second redemption succeeded");
+                        }
+                        catch (OAuthClientException exception)
+                        {
+                            session?.Trace.Add("Fault injection", "RedeemCodeTwice: the second redemption failed: " + exception.Message);
+                        }
+                    }
 
                     // Read the Id token header to determine if it is encrypted
                     var idToken = tokenResponse.IdToken;
@@ -258,6 +313,7 @@ namespace WebAppNetCore
                         context.TokenEndpointResponse?.AccessToken,
                         context.TokenEndpointResponse?.TokenType,
                         session,
+                        Fault.None,
                         context.HttpContext.RequestAborted);
                     if (userInfo != null)
                     {

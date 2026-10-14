@@ -29,7 +29,7 @@ namespace WebAppNetCore.OAuth
         /// <summary>
         /// Adds the client authentication to the request. Returns the client assertion for private_key_jwt, and null otherwise.
         /// </summary>
-        public string Apply(HttpRequestMessage request, IDictionary<string, string> parameters, OpenIdConnectConfiguration metadata)
+        public string Apply(HttpRequestMessage request, IDictionary<string, string> parameters, OpenIdConnectConfiguration metadata, Fault fault = Fault.None)
         {
             switch (configuration.TokenAuthnMethod())
             {
@@ -44,7 +44,7 @@ namespace WebAppNetCore.OAuth
                     return null;
 
                 default: // private_key_jwt
-                    var clientAssertion = CreateClientAssertion(metadata);
+                    var clientAssertion = CreateClientAssertion(metadata, fault);
                     parameters["client_assertion_type"] = ClientAssertionType;
                     parameters["client_assertion"] = clientAssertion;
                     parameters["client_id"] = configuration.ClientId();
@@ -52,7 +52,7 @@ namespace WebAppNetCore.OAuth
             }
         }
 
-        private string CreateClientAssertion(OpenIdConnectConfiguration metadata)
+        private string CreateClientAssertion(OpenIdConnectConfiguration metadata, Fault fault)
         {
             using var cert = JwtAssertionSigningCertificate();
             if (cert == null || !cert.HasPrivateKey)
@@ -65,15 +65,15 @@ namespace WebAppNetCore.OAuth
                 ? metadata.Issuer
                 : IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
 
-            var now = DateTimeOffset.UtcNow;
+            var issuedAt = fault == Fault.AssertionFutureIat ? DateTimeOffset.UtcNow.AddSeconds(120) : DateTimeOffset.UtcNow;
             var claims = new Dictionary<string, object>
             {
                 { "iss", configuration.ClientId() },
                 { "sub", configuration.ClientId() },
-                { "aud", audience },
+                { "aud", fault == Fault.AssertionAudienceArray ? new[] { audience } : (object)audience },
                 { "jti", Guid.NewGuid().ToString() }, // a new value for each assertion, because Identify rejects a replayed jti
-                { "exp", now.AddMinutes(5).ToUnixTimeSeconds() },
-                { "iat", now.ToUnixTimeSeconds() }
+                { "exp", issuedAt.AddMinutes(5).ToUnixTimeSeconds() },
+                { "iat", issuedAt.ToUnixTimeSeconds() }
             };
 
             // Identify accepts RS256 to PS512, restricted per connection by the rule clientJwt.signingAlgorithms.

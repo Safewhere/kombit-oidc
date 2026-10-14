@@ -223,10 +223,19 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// Shows the fault controls on the home page, for negative tests. Never turn it on for a production client.
+        /// </summary>
+        public static bool EnableFaultInjection(this IConfiguration configuration)
+        {
+            return ParseBool(configuration, "Testing:EnableFaultInjection");
+        }
+
+        /// <summary>
         /// Reads every building-block setting once, so that an invalid value stops the application at startup.
         /// </summary>
         public static void ValidateBuildingBlockSettings(this IConfiguration configuration)
         {
+            configuration.EnableFaultInjection();
             configuration.ValidIdTokenSigningAlgorithms();
             configuration.ClientAssertionAudience();
             configuration.ClientAssertionSigningAlgorithm();
@@ -264,6 +273,11 @@ namespace WebAppNetCore
             var algorithms = configuration.ValidIdTokenSigningAlgorithms();
             blocks.Add(new KeyValuePair<string, string>("ID token algorithms (ValidIdTokenSigningAlgorithms)",
                 algorithms.Length == 0 ? "library default" : string.Join(", ", algorithms)));
+            if (configuration.EnableFaultInjection())
+            {
+                blocks.Add(new KeyValuePair<string, string>("Fault injection (Testing:EnableFaultInjection)", "True"));
+            }
+
             return blocks;
         }
 

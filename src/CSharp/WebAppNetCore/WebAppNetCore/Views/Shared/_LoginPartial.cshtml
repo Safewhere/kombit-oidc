@@ -1,5 +1,7 @@
 @using Microsoft.Extensions.Options
 @using System.Security.Principal
+@using WebAppNetCore.OAuth
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 
 @{
     var availableLoas = new List<string> {
@@ -31,6 +33,10 @@
         <div class="input-group">
             <input id="max_age" name="max_age" type="number" style="width:350px;max-width:350px;" />
         </div>
+        @if (Configuration.EnableFaultInjection())
+        {
+            <partial name="_FaultSelect" model="FaultInjection.SignInFaults" />
+        }
         <br />
         <div class="input-group">
             @if (User.Identity.IsAuthenticated)

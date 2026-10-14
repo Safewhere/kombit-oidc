@@ -30,13 +30,16 @@ namespace WebAppNetCore.OAuth
             this.configuration = configuration;
         }
 
-        public async Task<PushedAuthorizationResult> PushAsync(OpenIdConnectMessage authorizationRequest, ClientSession session, CancellationToken cancellationToken)
+        public async Task<PushedAuthorizationResult> PushAsync(
+            OpenIdConnectMessage authorizationRequest, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var parEndpoint = IdentifyMetadata.RequireEndpoint(metadata.PushedAuthorizationRequestEndpoint, "pushed_authorization_request_endpoint");
 
             // With a proof, Identify binds the code to the proof key, as with dpop_jkt. With both, the keys must be the same.
             var dpopKey = configuration.DPoPSendProofToParEndpoint() ? session?.DPoPKey : null;
+            using var faultKey = fault == Fault.ParProofKeyMismatch ? DPoPKey.Create() : null;
+            dpopKey = faultKey ?? dpopKey;
 
             string dpopNonce = null;
             for (var attempt = 1; ; attempt++)
@@ -45,7 +48,7 @@ namespace WebAppNetCore.OAuth
                 // the parameters that OnRedirectToIdentityProvider added.
                 var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
                 using var request = new HttpRequestMessage(HttpMethod.Post, parEndpoint);
-                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata);
+                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault);
                 if (dpopKey != null)
                 {
                     request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", parEndpoint, nonce: dpopNonce));

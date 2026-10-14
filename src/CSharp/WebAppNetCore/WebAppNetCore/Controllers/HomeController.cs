@@ -84,7 +84,8 @@ namespace WebAppNetCore.Controllers
                 BuildingBlocks = Configuration.DescribeBuildingBlocks(),
                 Warnings = Configuration.BuildingBlockWarnings(),
                 Result = TempData[ProtocolViewModel.ResultKey] as string,
-                IsAuthenticated = HttpContext.User.Identity.IsAuthenticated
+                IsAuthenticated = HttpContext.User.Identity.IsAuthenticated,
+                FaultInjectionEnabled = Configuration.EnableFaultInjection()
             };
             if (!model.IsAuthenticated)
             {

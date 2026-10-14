@@ -28,7 +28,7 @@ namespace WebAppNetCore.OAuth
         }
 
         public Task<OpenIdConnectMessage> RedeemCodeAsync(
-            string code, string redirectUri, string codeVerifier, string sessionState, ClientSession session, CancellationToken cancellationToken)
+            string code, string redirectUri, string codeVerifier, string sessionState, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var parameters = new Dictionary<string, string>
             {
@@ -42,24 +42,25 @@ namespace WebAppNetCore.OAuth
                 parameters["session_state"] = sessionState;
             }
 
-            return SendAsync("Token request (authorization code)", parameters, session, cancellationToken);
+            return SendAsync("Token request (authorization code)", parameters, session, fault, cancellationToken);
         }
 
         /// <summary>
         /// Uses the refresh token with the DPoP key of the sign-in. Identify binds the refresh token of a public client to the
         /// key; for a confidential client, client authentication binds it, and the new access token is bound to the proof key.
         /// </summary>
-        public Task<OpenIdConnectMessage> RefreshAsync(string refreshToken, ClientSession session, CancellationToken cancellationToken)
+        public Task<OpenIdConnectMessage> RefreshAsync(string refreshToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var parameters = new Dictionary<string, string>
             {
                 { "grant_type", "refresh_token" },
                 { "refresh_token", refreshToken }
             };
-            return SendAsync("Token request (refresh token)", parameters, session, cancellationToken);
+            return SendAsync("Token request (refresh token)", parameters, session, fault, cancellationToken);
         }
 
-        private async Task<OpenIdConnectMessage> SendAsync(string step, Dictionary<string, string> grantParameters, ClientSession session, CancellationToken cancellationToken)
+        private async Task<OpenIdConnectMessage> SendAsync(
+            string step, Dictionary<string, string> grantParameters, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var tokenEndpoint = IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
@@ -70,16 +71,69 @@ namespace WebAppNetCore.OAuth
                 dpopKey = session?.DPoPKey ?? throw new OAuthClientException("The DPoP key of this sign-in is no longer available, for example after a restart. Sign in again.");
             }
 
+            // A fault changes the proof of this request, never the key of the sign-in, except that NewDPoPKeyOnRefresh replaces
+            // the key after a successful refresh.
+            var htu = tokenEndpoint;
+            DPoPKey faultKey = null;
+            if (dpopKey != null)
+            {
+                switch (fault)
+                {
+                    case Fault.NoDPoPProof:
+                        dpopKey = null;
+                        break;
+                    case Fault.WrongDPoPKey:
+                    case Fault.NewDPoPKeyOnRefresh:
+                        dpopKey = faultKey = DPoPKey.Create();
+                        break;
+                    case Fault.SmallDPoPKey:
+                        dpopKey = faultKey = DPoPKey.Create(1024);
+                        break;
+                    case Fault.WrongHtu:
+                        htu = metadata.AuthorizationEndpoint;
+                        break;
+                }
+            }
+
+            try
+            {
+                var tokenResponse = await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken);
+                if (fault == Fault.NewDPoPKeyOnRefresh && faultKey != null)
+                {
+                    // The old key is not disposed, because a concurrent request of the session can still use it.
+                    session.DPoPKey = faultKey;
+                    faultKey = null;
+                }
+
+                return tokenResponse;
+            }
+            finally
+            {
+                faultKey?.Dispose();
+            }
+        }
+
+        private async Task<OpenIdConnectMessage> SendAsync(
+            string step,
+            Dictionary<string, string> grantParameters,
+            ClientSession session,
+            Fault fault,
+            OpenIdConnectConfiguration metadata,
+            string tokenEndpoint,
+            DPoPKey dpopKey,
+            string htu,
+            CancellationToken cancellationToken)
+        {
             string dpopNonce = null;
             for (var attempt = 1; ; attempt++)
             {
                 // Each attempt has a new client assertion and a new proof, because Identify rejects a replayed jti.
                 var parameters = new Dictionary<string, string>(grantParameters);
                 using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
-                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata);
+                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault);
                 if (dpopKey != null)
                 {
-                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", tokenEndpoint, nonce: dpopNonce));
+                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce));
                 }
                 request.Content = new FormUrlEncodedContent(parameters);
 

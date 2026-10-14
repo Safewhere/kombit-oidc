@@ -1,0 +1,14 @@
+@model IEnumerable<WebAppNetCore.OAuth.Fault>
+@using WebAppNetCore.OAuth
+
+@* A fault list for one form. The server accepts a fault only when Testing:EnableFaultInjection is true. *@
+<div class="input-group" style="margin:5px 0">
+    <label>Fault injection (negative test)</label>
+    <select name="@FaultInjection.FieldName" class="form-select" style="width:100%;max-width:700px;">
+        <option value="">None</option>
+        @foreach (var fault in Model)
+        {
+            <option value="@fault">@fault: @FaultInjection.Describe(fault)</option>
+        }
+    </select>
+</div>

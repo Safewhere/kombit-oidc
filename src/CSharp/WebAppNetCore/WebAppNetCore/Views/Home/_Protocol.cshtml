@@ -1,4 +1,5 @@
 @model WebAppNetCore.Models.ProtocolViewModel
+@using WebAppNetCore.OAuth
 
 <style>
     .protocolTable td {
@@ -23,11 +24,6 @@
         cursor: pointer;
     }
 </style>
-
-@if (!string.IsNullOrEmpty(Model.Result))
-{
-    <div class="alert alert-warning" role="alert" id="protocolResult">@Model.Result</div>
-}
 
 <div class="alert alert-info" role="alert" id="buildingBlocks">
     <h4 class="alert-heading">OAuth building blocks</h4>
@@ -62,11 +58,19 @@
         {
             <p>The server-side state of this sign-in is gone, for example after a restart. Sign in again before you call UserInfo or refresh with DPoP.</p>
         }
-        <div style="display:flex; gap:5px; margin-top:8px">
+        <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:8px">
             <form method="post" asp-controller="Account" asp-action="UserInfo">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.UserInfoFaults" />
+                }
                 <button type="submit" class="btn btn-primary">Call UserInfo</button>
             </form>
             <form method="post" asp-controller="Account" asp-action="Refresh">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.RefreshFaults" />
+                }
                 <button type="submit" class="btn btn-primary">Refresh access token</button>
             </form>
         </div>

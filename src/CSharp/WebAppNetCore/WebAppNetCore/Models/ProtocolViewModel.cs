@@ -19,6 +19,8 @@ namespace WebAppNetCore.Models
 
         public bool IsAuthenticated { get; set; }
 
+        public bool FaultInjectionEnabled { get; set; }
+
         /// <summary>False when the server-side state of the sign-in is gone, for example after a restart.</summary>
         public bool SessionStateAvailable { get; set; }
 

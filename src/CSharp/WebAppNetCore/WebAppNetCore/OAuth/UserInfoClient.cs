@@ -33,7 +33,7 @@ namespace WebAppNetCore.OAuth
         /// and Bearer otherwise. Returns null when the discovery document has no UserInfo endpoint or when there is no access token,
         /// as the handler does.
         /// </summary>
-        public async Task<UserInfoResponse> GetAsync(string accessToken, string tokenType, ClientSession session, CancellationToken cancellationToken)
+        public async Task<UserInfoResponse> GetAsync(string accessToken, string tokenType, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var userInfoEndpoint = metadata.UserInfoEndpoint;
@@ -43,20 +43,24 @@ namespace WebAppNetCore.OAuth
             }
 
             DPoPKey dpopKey = null;
-            if (string.Equals(tokenType, "DPoP", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(tokenType, "DPoP", StringComparison.OrdinalIgnoreCase) && fault != Fault.BearerAtUserInfo)
             {
                 dpopKey = session?.DPoPKey ?? throw new OAuthClientException(
                     "The access token is bound to a DPoP key, but the key of this sign-in is no longer available, for example after a restart. Sign in again.");
             }
 
             string dpopNonce = null;
+            string replayedProof = null;
             for (var attempt = 1; ; attempt++)
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, userInfoEndpoint);
+                string proof = null;
                 if (dpopKey != null)
                 {
+                    proof = replayedProof ?? DPoPProofFactory.Create(
+                        dpopKey, configuration.DPoPSigningAlgorithm(), "GET", userInfoEndpoint, fault == Fault.MissingAth ? null : accessToken, dpopNonce);
                     request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
-                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "GET", userInfoEndpoint, accessToken, dpopNonce));
+                    request.Headers.Add("DPoP", proof);
                 }
                 else
                 {
@@ -64,6 +68,13 @@ namespace WebAppNetCore.OAuth
                 }
 
                 using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                if (fault == Fault.ReplayDPoPProof && proof != null && replayedProof == null)
+                {
+                    session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, "fault ReplayDPoPProof: the next call sends the same proof");
+                    replayedProof = proof;
+                    continue;
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
                     var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;

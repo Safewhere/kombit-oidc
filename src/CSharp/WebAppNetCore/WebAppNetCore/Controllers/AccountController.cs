@@ -39,7 +39,7 @@ namespace WebAppNetCore.Controllers
         // POST with an antiforgery token protects the flow initiation against CSRF (FAPI 2.0 section 5.3.3.1 item 12).
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> SignIn([FromForm] string loa, [FromForm] string max_age, [FromForm] bool forceLogin, [FromForm] bool isPassive)
+        public async Task<IActionResult> SignIn([FromForm] string loa, [FromForm] string max_age, [FromForm] bool forceLogin, [FromForm] bool isPassive, [FromForm] string fault)
         {
             var properties = new AuthenticationProperties { RedirectUri = "/" };
             if(!string.IsNullOrEmpty(loa))
@@ -51,6 +51,8 @@ namespace WebAppNetCore.Controllers
                 properties.SetParameter("prompt", "login");
             else if(isPassive)
                 properties.SetParameter("prompt", "none");
+
+            FaultInjection.Write(properties, FaultInjection.Parse(fault, configuration, FaultInjection.SignInFaults));
 
             try
             {
@@ -70,7 +72,7 @@ namespace WebAppNetCore.Controllers
         // Calls UserInfo with the access token of the session: with the DPoP scheme and a proof for a DPoP-bound token.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> UserInfo([FromServices] UserInfoClient userInfoClient, [FromServices] ClientSessionStore sessionStore)
+        public async Task<IActionResult> UserInfo([FromServices] UserInfoClient userInfoClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
         {
             var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             if (!result.Succeeded)
@@ -85,6 +87,7 @@ namespace WebAppNetCore.Controllers
                     result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
                     result.Properties.GetTokenValue("token_type"),
                     session,
+                    FaultInjection.Parse(fault, configuration, FaultInjection.UserInfoFaults),
                     HttpContext.RequestAborted);
                 if (userInfo != null && session != null)
                 {
@@ -105,7 +108,7 @@ namespace WebAppNetCore.Controllers
         // Uses the refresh token with the DPoP key of the sign-in, and stores the new access token in the session.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Refresh([FromServices] TokenClient tokenClient, [FromServices] ClientSessionStore sessionStore)
+        public async Task<IActionResult> Refresh([FromServices] TokenClient tokenClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
         {
             var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             if (!result.Succeeded)
@@ -122,7 +125,11 @@ namespace WebAppNetCore.Controllers
 
             try
             {
-                var response = await tokenClient.RefreshAsync(refreshToken, sessionStore.Get(result.Properties), HttpContext.RequestAborted);
+                var response = await tokenClient.RefreshAsync(
+                    refreshToken,
+                    sessionStore.Get(result.Properties),
+                    FaultInjection.Parse(fault, configuration, FaultInjection.RefreshFaults),
+                    HttpContext.RequestAborted);
 
                 // The sample keeps the ID token of the sign-in, which the handler validated.
                 var tokens = result.Properties.GetTokens().ToDictionary(t => t.Name, t => t.Value);
