@@ -2,6 +2,8 @@
 using System.Linq;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore
 {
@@ -155,11 +157,67 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// The aud value of client assertions at the token and PAR endpoints.
+        /// </summary>
+        public static ClientAssertionAudience ClientAssertionAudience(this IConfiguration configuration)
+        {
+            return ParseEnum(configuration, "OpenIdConnectOptions:ClientAssertion:Audience", OAuth.ClientAssertionAudience.TokenEndpoint);
+        }
+
+        /// <summary>
+        /// The alg value of client assertions. Identify restricts it per connection with the rule clientJwt.signingAlgorithms.
+        /// </summary>
+        public static string ClientAssertionSigningAlgorithm(this IConfiguration configuration)
+        {
+            return ParseRsaSigningAlgorithm(configuration, "OpenIdConnectOptions:ClientAssertion:SigningAlgorithm", SecurityAlgorithms.RsaSha256);
+        }
+
+        /// <summary>
         /// Reads every building-block setting once, so that an invalid value stops the application at startup.
         /// </summary>
         public static void ValidateBuildingBlockSettings(this IConfiguration configuration)
         {
             configuration.ValidIdTokenSigningAlgorithms();
+            configuration.ClientAssertionAudience();
+            configuration.ClientAssertionSigningAlgorithm();
+        }
+
+        // The RSA algorithms that Identify accepts for client assertions and DPoP proofs.
+        private static readonly string[] RsaSigningAlgorithms = { "RS256", "RS384", "RS512", "PS256", "PS384", "PS512" };
+
+        private static string ParseRsaSigningAlgorithm(IConfiguration configuration, string key, string defaultValue)
+        {
+            var value = configuration[key];
+            if (string.IsNullOrEmpty(value))
+            {
+                return defaultValue;
+            }
+
+            if (!RsaSigningAlgorithms.Contains(value, StringComparer.Ordinal))
+            {
+                throw InvalidSetting(key, value, string.Join(", ", RsaSigningAlgorithms));
+            }
+
+            return value;
+        }
+
+        private static TEnum ParseEnum<TEnum>(IConfiguration configuration, string key, TEnum defaultValue)
+            where TEnum : struct, Enum
+        {
+            var value = configuration[key];
+            if (string.IsNullOrEmpty(value))
+            {
+                return defaultValue;
+            }
+
+            // Names only: Enum.TryParse would also accept numbers.
+            var name = Enum.GetNames<TEnum>().FirstOrDefault(n => string.Equals(n, value, StringComparison.OrdinalIgnoreCase));
+            if (name == null)
+            {
+                throw InvalidSetting(key, value, string.Join(", ", Enum.GetNames<TEnum>()));
+            }
+
+            return Enum.Parse<TEnum>(name);
         }
 
         private static InvalidOperationException InvalidSetting(string key, string value, string allowedValues)

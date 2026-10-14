@@ -60,19 +60,24 @@ namespace WebAppNetCore.OAuth
                 throw new OAuthClientException("Client certificate is not configured or does not have a private key for private_key_jwt authentication.");
             }
 
+            // With the Identify rule clientAssertion.audience=issuer, aud must be the issuer as one JSON string, not an array.
+            var audience = configuration.ClientAssertionAudience() == ClientAssertionAudience.Issuer
+                ? metadata.Issuer
+                : IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
+
             var now = DateTimeOffset.UtcNow;
             var claims = new Dictionary<string, object>
             {
                 { "iss", configuration.ClientId() },
                 { "sub", configuration.ClientId() },
-                { "aud", IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint") },
+                { "aud", audience },
                 { "jti", Guid.NewGuid().ToString() }, // a new value for each assertion, because Identify rejects a replayed jti
                 { "exp", now.AddMinutes(5).ToUnixTimeSeconds() },
                 { "iat", now.ToUnixTimeSeconds() }
             };
 
-            // CH2 OAuth private_key_jwt authentication only support client_assertion signed by RS256 signing algorithm
-            var signingCredentials = new X509SigningCredentials(cert, SecurityAlgorithms.RsaSha256);
+            // Identify accepts RS256 to PS512, restricted per connection by the rule clientJwt.signingAlgorithms.
+            var signingCredentials = new X509SigningCredentials(cert, configuration.ClientAssertionSigningAlgorithm());
             signingCredentials.Key.KeyId = Base64UrlEncoder.Encode(cert.GetCertHash());
             var tokenDescriptor = new SecurityTokenDescriptor
             {
