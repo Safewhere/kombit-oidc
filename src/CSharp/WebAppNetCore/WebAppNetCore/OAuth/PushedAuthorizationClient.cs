@@ -15,6 +15,8 @@ namespace WebAppNetCore.OAuth
     /// </summary>
     public sealed class PushedAuthorizationClient
     {
+        private const string Step = "Pushed authorization request";
+
         private readonly IHttpClientFactory httpClientFactory;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
@@ -43,7 +45,7 @@ namespace WebAppNetCore.OAuth
                 // the parameters that OnRedirectToIdentityProvider added.
                 var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
                 using var request = new HttpRequestMessage(HttpMethod.Post, parEndpoint);
-                clientAuthentication.Apply(request, parameters, metadata);
+                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata);
                 if (dpopKey != null)
                 {
                     request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", parEndpoint, nonce: dpopNonce));
@@ -56,14 +58,23 @@ namespace WebAppNetCore.OAuth
                     var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
                     if (challengedNonce != null)
                     {
+                        session?.Trace.AddExchange(Step, request, parameters, clientAssertion, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
                         dpopNonce = challengedNonce;
                         continue;
                     }
 
-                    throw await OAuthErrorResponseException.CreateAsync("PAR endpoint", response);
+                    var error = await OAuthErrorResponseException.CreateAsync("PAR endpoint", response);
+                    session?.Trace.AddExchange(Step, request, parameters, clientAssertion, error.StatusCode, error.Error + " " + error.ErrorDescription);
+                    throw error;
                 }
 
-                return await ReadResultAsync(response, cancellationToken);
+                var result = await ReadResultAsync(response, cancellationToken);
+                session?.Trace.AddExchange(Step, request, parameters, clientAssertion, result.StatusCode, "expires_in=" + result.ExpiresIn, new[]
+                {
+                    ProtocolTrace.Detail("request_uri", result.RequestUri),
+                    ProtocolTrace.Detail("expires_in", result.ExpiresIn?.ToString())
+                });
+                return result;
             }
         }
 

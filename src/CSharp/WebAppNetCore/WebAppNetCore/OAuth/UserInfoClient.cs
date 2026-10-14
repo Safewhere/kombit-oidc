@@ -15,6 +15,8 @@ namespace WebAppNetCore.OAuth
     /// </summary>
     public sealed class UserInfoClient
     {
+        private const string Step = "UserInfo request";
+
         private readonly IHttpClientFactory httpClientFactory;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly IConfiguration configuration;
@@ -67,14 +69,19 @@ namespace WebAppNetCore.OAuth
                     var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
                     if (challengedNonce != null)
                     {
+                        session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
                         dpopNonce = challengedNonce;
                         continue;
                     }
 
-                    throw await OAuthErrorResponseException.CreateAsync("UserInfo endpoint", response);
+                    var error = await OAuthErrorResponseException.CreateAsync("UserInfo endpoint", response);
+                    session?.Trace.AddExchange(Step, request, null, null, error.StatusCode, error.Error + " " + error.ErrorDescription);
+                    throw error;
                 }
 
-                return await ReadResponseAsync(response, cancellationToken);
+                var userInfo = await ReadResponseAsync(response, cancellationToken);
+                session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType);
+                return userInfo;
             }
         }
 

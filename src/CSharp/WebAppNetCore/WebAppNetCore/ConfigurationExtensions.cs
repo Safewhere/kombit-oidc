@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
@@ -234,6 +235,65 @@ namespace WebAppNetCore
             configuration.DPoPSendDPoPJkt();
             configuration.DPoPSendProofToParEndpoint();
             configuration.DPoPSigningAlgorithm();
+        }
+
+        /// <summary>
+        /// The active building blocks, for the startup log and the home page.
+        /// </summary>
+        public static IList<KeyValuePair<string, string>> DescribeBuildingBlocks(this IConfiguration configuration)
+        {
+            var blocks = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("Client authentication (TokenAuthnMethod)", configuration.TokenAuthnMethod())
+            };
+            if (configuration.TokenAuthnMethod() == "private_key_jwt")
+            {
+                blocks.Add(new KeyValuePair<string, string>("Client assertion", string.Format(
+                    "aud={0}, alg={1}", configuration.ClientAssertionAudience(), configuration.ClientAssertionSigningAlgorithm())));
+            }
+
+            blocks.Add(new KeyValuePair<string, string>("Pushed authorization requests (PushedAuthorization)", configuration.PushedAuthorization().ToString()));
+            blocks.Add(new KeyValuePair<string, string>("DPoP-bound access tokens (DPoP:BindAccessTokens)", configuration.DPoPBindAccessTokens().ToString()));
+            blocks.Add(new KeyValuePair<string, string>("DPoP code binding with dpop_jkt (DPoP:SendDPoPJkt)", configuration.DPoPSendDPoPJkt().ToString()));
+            blocks.Add(new KeyValuePair<string, string>("DPoP proof at PAR (DPoP:SendProofToParEndpoint)", configuration.DPoPSendProofToParEndpoint().ToString()));
+            if (configuration.UsesDPoPKey())
+            {
+                blocks.Add(new KeyValuePair<string, string>("DPoP proof algorithm (DPoP:SigningAlgorithm)", configuration.DPoPSigningAlgorithm()));
+            }
+
+            var algorithms = configuration.ValidIdTokenSigningAlgorithms();
+            blocks.Add(new KeyValuePair<string, string>("ID token algorithms (ValidIdTokenSigningAlgorithms)",
+                algorithms.Length == 0 ? "library default" : string.Join(", ", algorithms)));
+            return blocks;
+        }
+
+        /// <summary>
+        /// Combinations that cannot succeed and that the sample can detect alone. The sample still sends what the settings say, so
+        /// that the response of Identify is visible.
+        /// </summary>
+        public static IList<string> BuildingBlockWarnings(this IConfiguration configuration)
+        {
+            var warnings = new List<string>();
+            var codeIsBound = configuration.DPoPSendDPoPJkt()
+                || (configuration.DPoPSendProofToParEndpoint() && configuration.PushedAuthorization() != PushedAuthorizationBehavior.Disable);
+            if (codeIsBound && !configuration.DPoPBindAccessTokens())
+            {
+                warnings.Add("The authorization code is bound to the DPoP key (DPoP:SendDPoPJkt or DPoP:SendProofToParEndpoint), but DPoP:BindAccessTokens is false. "
+                    + "The token request has no proof, so Identify rejects the code redemption.");
+            }
+
+            if (configuration.DPoPSendProofToParEndpoint() && configuration.PushedAuthorization() == PushedAuthorizationBehavior.Disable)
+            {
+                warnings.Add("DPoP:SendProofToParEndpoint has no effect, because PushedAuthorization is Disable.");
+            }
+
+            if (configuration.EnableSessionManagement() && configuration.PushedAuthorization() != PushedAuthorizationBehavior.Disable)
+            {
+                warnings.Add("EnableSessionManagement sends a direct authorization request from the session check iframe. "
+                    + "It fails when the Identify connection has RequirePushedAuthorizationRequests=true.");
+            }
+
+            return warnings;
         }
 
         private static bool ParseBool(IConfiguration configuration, string key)

@@ -98,7 +98,8 @@ internal sealed class StubIdentify : HttpMessageHandler
         var claims = new Dictionary<string, object>
         {
             ["sub"] = Subject,
-            ["scope"] = "openid"
+            ["scope"] = "openid",
+            ["jti"] = Guid.NewGuid().ToString("N")
         };
         if (jkt != null)
         {

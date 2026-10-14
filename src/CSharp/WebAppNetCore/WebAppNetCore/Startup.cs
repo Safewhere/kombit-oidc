@@ -32,6 +32,16 @@ namespace WebAppNetCore
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
         {
+            Console.WriteLine("OAuth building blocks:");
+            foreach (var block in Configuration.DescribeBuildingBlocks())
+            {
+                Console.WriteLine("  " + block.Key + ": " + block.Value);
+            }
+            foreach (var warning in Configuration.BuildingBlockWarnings())
+            {
+                Console.WriteLine("  WARNING: " + warning);
+            }
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();

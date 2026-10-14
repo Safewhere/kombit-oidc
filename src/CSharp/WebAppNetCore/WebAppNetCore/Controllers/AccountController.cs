@@ -15,6 +15,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography.X509Certificates;
+using System.Globalization;
+using WebAppNetCore.Models;
 using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Controllers
@@ -62,6 +64,99 @@ namespace WebAppNetCore.Controllers
             }
 
             return new EmptyResult();
+        }
+
+        // POST: /Account/UserInfo
+        // Calls UserInfo with the access token of the session: with the DPoP scheme and a proof for a DPoP-bound token.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> UserInfo([FromServices] UserInfoClient userInfoClient, [FromServices] ClientSessionStore sessionStore)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var session = sessionStore.Get(result.Properties);
+            try
+            {
+                var userInfo = await userInfoClient.GetAsync(
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
+                    result.Properties.GetTokenValue("token_type"),
+                    session,
+                    HttpContext.RequestAborted);
+                if (userInfo != null && session != null)
+                {
+                    session.LastUserInfo = ProtocolTrace.FormatJson(userInfo.Json);
+                }
+
+                TempData[ProtocolViewModel.ResultKey] = userInfo == null ? "The discovery document has no UserInfo endpoint." : "The UserInfo request succeeded.";
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/Refresh
+        // Uses the refresh token with the DPoP key of the sign-in, and stores the new access token in the session.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Refresh([FromServices] TokenClient tokenClient, [FromServices] ClientSessionStore sessionStore)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var refreshToken = result.Properties.GetTokenValue("refresh_token");
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                TempData[ProtocolViewModel.ResultKey] = "The session has no refresh token. Identify issues one when the connection has AllowRefreshToken=true.";
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            try
+            {
+                var response = await tokenClient.RefreshAsync(refreshToken, sessionStore.Get(result.Properties), HttpContext.RequestAborted);
+
+                // The sample keeps the ID token of the sign-in, which the handler validated.
+                var tokens = result.Properties.GetTokens().ToDictionary(t => t.Name, t => t.Value);
+                tokens[OpenIdConnectConstants.AccessToken] = response.AccessToken;
+                if (!string.IsNullOrEmpty(response.TokenType))
+                {
+                    tokens["token_type"] = response.TokenType;
+                }
+
+                // FAPI 2.0 asks for no routine rotation (section 5.3.2.1 item 9). When Identify returns a refresh token anyway, it
+                // replaces the old one (section 5.3.3.1 item 6).
+                var rotated = !string.IsNullOrEmpty(response.RefreshToken) && response.RefreshToken != refreshToken;
+                if (rotated)
+                {
+                    tokens["refresh_token"] = response.RefreshToken;
+                }
+
+                if (int.TryParse(response.ExpiresIn, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expiresIn))
+                {
+                    tokens["expires_at"] = DateTimeOffset.UtcNow.AddSeconds(expiresIn).ToString("o", CultureInfo.InvariantCulture);
+                }
+
+                result.Properties.StoreTokens(tokens.Select(t => new AuthenticationToken { Name = t.Key, Value = t.Value }));
+                await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal, result.Properties);
+                TempData[ProtocolViewModel.ResultKey] = rotated
+                    ? "The refresh succeeded. Identify returned a new refresh token, and the sample stored it."
+                    : "The refresh succeeded. The refresh token is unchanged.";
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
         }
 
         // GET: /Account/SignOut

@@ -125,6 +125,11 @@ namespace WebAppNetCore
                     {
                         context.ProtocolMessage.Parameters.Add("max_age", max_age.ToString());
                     }
+
+                    session.Trace.Add(
+                        "Authorization request parameters",
+                        configuration.PushedAuthorization() == PushedAuthorizationBehavior.Disable ? "Sent by the browser" : "Pushed when the handler uses PAR",
+                        context.ProtocolMessage.Parameters.Select(p => ProtocolTrace.Detail(p.Key, p.Key == "state" ? "(set by the handler)" : p.Value)));
                 },
                 OnPushAuthorization = async (context) =>
                 {
@@ -138,6 +143,11 @@ namespace WebAppNetCore
                     if (session != null)
                     {
                         session.PushedAuthorization = result;
+                        session.Trace.Add("Browser authorization request", "client_id and request_uri only", new[]
+                        {
+                            ProtocolTrace.Detail("client_id", context.Options.ClientId),
+                            ProtocolTrace.Detail("request_uri", result.RequestUri)
+                        });
                     }
                     context.HandlePush(result.RequestUri);
                 },
@@ -153,8 +163,20 @@ namespace WebAppNetCore
                 {
                     Console.WriteLine("OnMessageReceived.");
                     // The check runs for every authorization response, also an error response, before the handler reads it.
-                    var metadata = await context.HttpContext.RequestServices.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
+                    var services = context.HttpContext.RequestServices;
+                    var metadata = await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
                     var failure = AuthorizationResponseIssuer.Validate(context.ProtocolMessage.Iss, metadata);
+                    services.GetRequiredService<ClientSessionStore>().Get(context.Properties)?.Trace.Add(
+                        "Authorization response",
+                        failure ?? "iss check passed (RFC 9207)",
+                        new[]
+                        {
+                            ProtocolTrace.Detail("iss", context.ProtocolMessage.Iss ?? "(none)"),
+                            ProtocolTrace.Detail("authorization_response_iss_parameter_supported", metadata.AuthorizationResponseIssParameterSupported.ToString()),
+                            ProtocolTrace.Detail("code", string.IsNullOrEmpty(context.ProtocolMessage.Code) ? "(none)" : "(present)"),
+                            ProtocolTrace.Detail("error", context.ProtocolMessage.Error ?? "(none)"),
+                            ProtocolTrace.Detail("error_description", context.ProtocolMessage.ErrorDescription ?? "(none)")
+                        });
                     if (failure != null)
                     {
                         context.Fail(failure);
@@ -231,14 +253,19 @@ namespace WebAppNetCore
                     }
 
                     var services = context.HttpContext.RequestServices;
+                    var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
                     var userInfo = await services.GetRequiredService<UserInfoClient>().GetAsync(
                         context.TokenEndpointResponse?.AccessToken,
                         context.TokenEndpointResponse?.TokenType,
-                        services.GetRequiredService<ClientSessionStore>().Get(context.Properties),
+                        session,
                         context.HttpContext.RequestAborted);
                     if (userInfo != null)
                     {
                         Console.WriteLine("UserInfo received.");
+                        if (session != null)
+                        {
+                            session.LastUserInfo = ProtocolTrace.FormatJson(userInfo.Json);
+                        }
                         // The same processing as the handler does with GetClaimsFromUserInfoEndpoint: the sub check and the claim actions.
                         context.Options.ProtocolValidator.ValidateUserInfoResponse(new OpenIdConnectProtocolValidationContext
                         {

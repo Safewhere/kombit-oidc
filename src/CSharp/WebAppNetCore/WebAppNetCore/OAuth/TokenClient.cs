@@ -42,10 +42,24 @@ namespace WebAppNetCore.OAuth
                 parameters["session_state"] = sessionState;
             }
 
-            return SendAsync(parameters, session, cancellationToken);
+            return SendAsync("Token request (authorization code)", parameters, session, cancellationToken);
         }
 
-        private async Task<OpenIdConnectMessage> SendAsync(Dictionary<string, string> grantParameters, ClientSession session, CancellationToken cancellationToken)
+        /// <summary>
+        /// Uses the refresh token with the DPoP key of the sign-in. Identify binds the refresh token of a public client to the
+        /// key; for a confidential client, client authentication binds it, and the new access token is bound to the proof key.
+        /// </summary>
+        public Task<OpenIdConnectMessage> RefreshAsync(string refreshToken, ClientSession session, CancellationToken cancellationToken)
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                { "grant_type", "refresh_token" },
+                { "refresh_token", refreshToken }
+            };
+            return SendAsync("Token request (refresh token)", parameters, session, cancellationToken);
+        }
+
+        private async Task<OpenIdConnectMessage> SendAsync(string step, Dictionary<string, string> grantParameters, ClientSession session, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var tokenEndpoint = IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
@@ -62,7 +76,7 @@ namespace WebAppNetCore.OAuth
                 // Each attempt has a new client assertion and a new proof, because Identify rejects a replayed jti.
                 var parameters = new Dictionary<string, string>(grantParameters);
                 using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
-                clientAuthentication.Apply(request, parameters, metadata);
+                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata);
                 if (dpopKey != null)
                 {
                     request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", tokenEndpoint, nonce: dpopNonce));
@@ -75,14 +89,26 @@ namespace WebAppNetCore.OAuth
                     var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
                     if (challengedNonce != null)
                     {
+                        session?.Trace.AddExchange(step, request, parameters, clientAssertion, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
                         dpopNonce = challengedNonce;
                         continue;
                     }
 
-                    throw await OAuthErrorResponseException.CreateAsync("token endpoint", response);
+                    var error = await OAuthErrorResponseException.CreateAsync("token endpoint", response);
+                    session?.Trace.AddExchange(step, request, parameters, clientAssertion, error.StatusCode, error.Error + " " + error.ErrorDescription);
+                    throw error;
                 }
 
                 var tokenResponse = new OpenIdConnectMessage(await response.Content.ReadAsStringAsync(cancellationToken));
+                session?.Trace.AddExchange(step, request, parameters, clientAssertion, (int)response.StatusCode, "token_type=" + tokenResponse.TokenType, new[]
+                {
+                    ProtocolTrace.Detail("token_type", tokenResponse.TokenType),
+                    ProtocolTrace.Detail("expires_in", tokenResponse.ExpiresIn),
+                    ProtocolTrace.Detail("scope", tokenResponse.Scope),
+                    ProtocolTrace.Detail("refresh_token", string.IsNullOrEmpty(tokenResponse.RefreshToken) ? "(none)" : "(present)"),
+                    ProtocolTrace.Detail("id_token", string.IsNullOrEmpty(tokenResponse.IdToken) ? "(none)" : "(present)")
+                });
+
                 // An authorization server without DPoP support ignores the proof and issues a bearer token (RFC 9449 section 5).
                 if (dpopKey != null && !string.Equals(tokenResponse.TokenType, "DPoP", StringComparison.OrdinalIgnoreCase))
                 {

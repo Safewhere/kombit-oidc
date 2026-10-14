@@ -72,6 +72,11 @@ namespace WebAppNetCore.OAuth
         /// <summary>The DPoP key of the sign-in, or null when no DPoP setting is on.</summary>
         public DPoPKey DPoPKey { get; set; }
 
+        public ProtocolTrace Trace { get; } = new ProtocolTrace();
+
+        /// <summary>The claims of the last UserInfo response, as indented JSON.</summary>
+        public string LastUserInfo { get; set; }
+
         public void Dispose()
         {
             DPoPKey?.Dispose();

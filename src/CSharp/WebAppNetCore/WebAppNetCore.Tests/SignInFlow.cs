@@ -39,14 +39,20 @@ internal static class SignInFlow
     }
 
     /// <summary>Posts the sign-in form of the home page, with its antiforgery token.</summary>
-    internal static async Task<HttpResponseMessage> PostSignInAsync(HttpClient client, IDictionary<string, string>? fields = null)
+    internal static Task<HttpResponseMessage> PostSignInAsync(HttpClient client, IDictionary<string, string>? fields = null)
+    {
+        return PostFormAsync(client, "/Account/SignIn", fields);
+    }
+
+    /// <summary>Posts a form of the home page, with an antiforgery token of the page.</summary>
+    internal static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, string path, IDictionary<string, string>? fields = null)
     {
         var page = await client.GetStringAsync("/");
         var form = new Dictionary<string, string>(fields ?? new Dictionary<string, string>())
         {
             ["__RequestVerificationToken"] = ReadFormValue(page, "__RequestVerificationToken")
         };
-        return await client.PostAsync("/Account/SignIn", new FormUrlEncodedContent(form));
+        return await client.PostAsync(path, new FormUrlEncodedContent(form));
     }
 
     internal static string ReadFormValue(string html, string name)
