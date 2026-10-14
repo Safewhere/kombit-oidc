@@ -30,6 +30,11 @@ internal static class SignInFlow
         IDictionary<string, string>? fields = null)
     {
         using var response = await PostSignInAsync(client, fields);
+        if (response.Headers.Location?.OriginalString == "/Home/Error")
+        {
+            Assert.Fail("The sign-in went to the error page: " + await ReadErrorMessageAsync(client));
+        }
+
         return ReadAuthorizationRequest(response, factory);
     }
 
@@ -91,17 +96,28 @@ internal static class SignInFlow
     {
         var request = await StartAsync(client, factory);
         using var callback = await CompleteAsync(client, factory, request);
-        AssertSignedIn(callback);
+        await AssertSignedInAsync(client, callback);
         return request;
     }
 
-    internal static void AssertSignedIn(HttpResponseMessage callback)
+    internal static async Task AssertSignedInAsync(HttpClient client, HttpResponseMessage callback)
     {
         var location = callback.Headers.Location?.OriginalString;
-        Assert.True(
-            callback.StatusCode == HttpStatusCode.Redirect && location == "/",
-            $"Expected a redirect to the home page, but got {(int)callback.StatusCode} to '{location}': "
-                + callback.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        if (callback.StatusCode == HttpStatusCode.Redirect && location == "/")
+        {
+            return;
+        }
+
+        var detail = location == "/Home/Error" ? await ReadErrorMessageAsync(client) : await callback.Content.ReadAsStringAsync();
+        Assert.Fail($"Expected a redirect to the home page, but got {(int)callback.StatusCode} to '{location}': {detail}");
+    }
+
+    /// <summary>Reads the message that the error page shows.</summary>
+    internal static async Task<string> ReadErrorMessageAsync(HttpClient client)
+    {
+        var errorPage = await client.GetStringAsync("/Home/Error");
+        var message = Regex.Match(errorPage, "<h3>Error Message</h3>\\s*<p>(?<message>.*?)</p>", RegexOptions.Singleline);
+        return WebUtility.HtmlDecode(message.Groups["message"].Value.Trim());
     }
 
     /// <summary>Checks that the sample redirects to the error page and returns the page.</summary>

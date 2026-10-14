@@ -35,6 +35,9 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     internal StubIdentify Identify { get; } = new(ClientId);
 
+    /// <summary>Whether the discovery document has pushed_authorization_request_endpoint.</summary>
+    internal bool PublishParEndpoint { get; init; } = true;
+
     protected override IWebHostBuilder CreateWebHostBuilder()
     {
         return WebHost.CreateDefaultBuilder(Array.Empty<string>())
@@ -95,10 +98,14 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
               "token_endpoint": "{{StubIdentify.TokenEndpoint}}",
               "userinfo_endpoint": "{{StubIdentify.UserInfoEndpoint}}",
               "end_session_endpoint": "{{StubIdentify.EndSessionEndpoint}}",
-              "jwks_uri": "{{ProviderIssuer}}/certs.idp",
-              "pushed_authorization_request_endpoint": "{{StubIdentify.ParEndpoint}}"
+              "jwks_uri": "{{ProviderIssuer}}/certs.idp"
             }
             """);
+        if (PublishParEndpoint)
+        {
+            configuration.PushedAuthorizationRequestEndpoint = StubIdentify.ParEndpoint;
+        }
+
         configuration.SigningKeys.Add(Identify.SigningKey);
         return configuration;
     }

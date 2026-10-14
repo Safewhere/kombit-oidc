@@ -173,6 +173,15 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// When the handler pushes the authorization request (RFC 9126). Disable keeps the direct authorization request.
+        /// Identify always publishes require_pushed_authorization_requests=false, also for a connection that requires PAR.
+        /// </summary>
+        public static PushedAuthorizationBehavior PushedAuthorization(this IConfiguration configuration)
+        {
+            return ParseEnum(configuration, "OpenIdConnectOptions:PushedAuthorization", PushedAuthorizationBehavior.Disable);
+        }
+
+        /// <summary>
         /// Reads every building-block setting once, so that an invalid value stops the application at startup.
         /// </summary>
         public static void ValidateBuildingBlockSettings(this IConfiguration configuration)
@@ -180,6 +189,7 @@ namespace WebAppNetCore
             configuration.ValidIdTokenSigningAlgorithms();
             configuration.ClientAssertionAudience();
             configuration.ClientAssertionSigningAlgorithm();
+            configuration.PushedAuthorization();
         }
 
         // The RSA algorithms that Identify accepts for client assertions and DPoP proofs.

@@ -54,9 +54,9 @@ namespace WebAppNetCore.Controllers
             {
                 await HttpContext.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme, properties);
             }
-            catch (OAuthClientException exception)
+            catch (Exception exception) when (exception is OAuthClientException || exception is InvalidOperationException)
             {
-                // For example a discovery document of another issuer, or a PAR error response.
+                // For example a discovery document of another issuer, a PAR error response, or PAR required without a PAR endpoint.
                 TempData[ErrorPage.MessageKey] = exception.Message;
                 return RedirectToAction(nameof(HomeController.Error), "Home");
             }

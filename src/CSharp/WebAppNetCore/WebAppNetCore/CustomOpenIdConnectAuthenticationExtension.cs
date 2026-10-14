@@ -38,6 +38,9 @@ namespace WebAppNetCore
             services.AddSingleton<ClientAuthentication>();
             services.AddSingleton<TokenClient>();
             services.AddSingleton<UserInfoClient>();
+            services.AddSingleton<PushedAuthorizationClient>();
+            services.AddMemoryCache();
+            services.AddSingleton<ClientSessionStore>();
 
             return services;
         }
@@ -54,9 +57,12 @@ namespace WebAppNetCore
             // The sample calls UserInfo itself in OnTokenValidated, because the handler always uses the Bearer scheme.
             connectOptions.GetClaimsFromUserInfoEndpoint = false;
             connectOptions.UsePkce = true;
-            // Preserve direct GET/POST authorization and the sample's custom client authentication.
-            // PAR is enabled automatically by newer middleware when advertised by discovery.
-            connectOptions.PushedAuthorizationBehavior = PushedAuthorizationBehavior.Disable;
+            // Disable (the default) keeps the direct authorization request, because the handler would otherwise push as soon as
+            // discovery advertises a PAR endpoint. When the handler pushes, OnPushAuthorization sends the request.
+            connectOptions.PushedAuthorizationBehavior = configuration.PushedAuthorization();
+            // The browser request carries only OAuth parameters, not the x-client-SKU and x-client-ver telemetry parameters.
+            // After a push, the browser may send only client_id and request_uri (FAPI 2.0 section 5.3.3.2 item 6).
+            connectOptions.DisableTelemetry = true;
 
             var responseMode = configuration.ResponseMode();
             if (string.IsNullOrEmpty(responseMode))
@@ -94,8 +100,11 @@ namespace WebAppNetCore
                 OnRedirectToIdentityProvider = async (context) =>
                 {
                     Console.WriteLine("OnRedirectToIdentityProvider.");
+                    var services = context.HttpContext.RequestServices;
                     // Fails the sign-in early when the discovery document belongs to another issuer.
-                    await context.HttpContext.RequestServices.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
+                    await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
+                    // The handle goes into the state parameter, because the handler protects the properties after this event.
+                    services.GetRequiredService<ClientSessionStore>().Create(context.Properties);
 
                     context.Options.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
                     if (context.Properties.Parameters.TryGetValue("acr_values", out object acrValues))
@@ -107,6 +116,21 @@ namespace WebAppNetCore
                     {
                         context.ProtocolMessage.Parameters.Add("max_age", max_age.ToString());
                     }
+                },
+                OnPushAuthorization = async (context) =>
+                {
+                    Console.WriteLine("OnPushAuthorization.");
+                    var services = context.HttpContext.RequestServices;
+                    // The sample sends the request itself, with the configured client authentication. After HandlePush, the handler
+                    // sends nothing and redirects the browser with client_id and request_uri only. The event allows only one of
+                    // HandlePush, SkipPush, and HandleClientAuthentication.
+                    var result = await services.GetRequiredService<PushedAuthorizationClient>().PushAsync(context.ProtocolMessage, context.HttpContext.RequestAborted);
+                    var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
+                    if (session != null)
+                    {
+                        session.PushedAuthorization = result;
+                    }
+                    context.HandlePush(result.RequestUri);
                 },
                 OnRedirectToIdentityProviderForSignOut = async (context) =>
                 {
