@@ -46,16 +46,6 @@ namespace WebAppNetCore
             return configuration.IssuerDomain() + "/runtime/oauth2/authorize.idp";
         }
 
-        public static string TokenEndpoint(this IConfiguration configuration)
-        {
-            return configuration.IssuerDomain() + "/runtime/oauth2/token.idp";
-        }
-
-        public static string UserInfoEndpoint(this IConfiguration configuration)
-        {
-            return configuration.IssuerDomain() + "/runtime/openidconnect/userinfo.idp";
-        }
-
         public static string EndSessionEndpoint(this IConfiguration configuration)
         {
             return configuration.IssuerDomain() + "/runtime/openidconnect/logout.idp";

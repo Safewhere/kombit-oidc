@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using Xunit;
@@ -31,8 +34,127 @@ public sealed class CodeFlowTests
         Assert.Contains("Access Token", home);
     }
 
+    [Fact]
+    public async Task ClientSecretBasicSendsTheCredentialsInTheAuthorizationHeader()
+    {
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:TokenAuthnMethod"] = "client_secret_basic"
+        });
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+
+        var tokenRequest = Assert.Single(factory.Identify.RequestsTo(StubIdentify.TokenEndpoint));
+        var authorization = AuthenticationHeaderValue.Parse(tokenRequest.Header("Authorization")!);
+        Assert.Equal("Basic", authorization.Scheme);
+        Assert.Equal(
+            $"{TestWebApplicationFactory.ClientId}:{TestWebApplicationFactory.ClientSecret}",
+            Encoding.UTF8.GetString(Convert.FromBase64String(authorization.Parameter!)));
+        Assert.False(tokenRequest.Form.ContainsKey("client_secret"));
+    }
+
+    [Fact]
+    public async Task PrivateKeyJwtSendsASignedClientAssertionForTheTokenEndpoint()
+    {
+        using var certificate = new TestCertificateFile();
+        using var factory = new TestWebApplicationFactory(settings: certificate.PrivateKeyJwtSettings());
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+
+        var tokenRequest = Assert.Single(factory.Identify.RequestsTo(StubIdentify.TokenEndpoint));
+        Assert.Equal("urn:ietf:params:oauth:client-assertion-type:jwt-bearer", tokenRequest.Form["client_assertion_type"]);
+        Assert.Equal(TestWebApplicationFactory.ClientId, tokenRequest.Form["client_id"]);
+        Assert.False(tokenRequest.Form.ContainsKey("client_secret"));
+
+        var assertion = await ValidateClientAssertionAsync(tokenRequest.Form["client_assertion"], certificate);
+        Assert.Equal(SecurityAlgorithms.RsaSha256, assertion.Alg);
+        Assert.Equal(Base64UrlEncoder.Encode(certificate.PublicCertificate.GetCertHash()), assertion.Kid);
+        Assert.Equal(TestWebApplicationFactory.ClientId, assertion.Issuer);
+        Assert.Equal(TestWebApplicationFactory.ClientId, assertion.Subject);
+        Assert.Equal(StubIdentify.TokenEndpoint, assertion.GetPayloadValue<string>("aud"));
+        Assert.False(string.IsNullOrEmpty(assertion.Id));
+    }
+
+    [Fact]
+    public async Task TheTokenEndpointComesFromTheDiscoveryDocument()
+    {
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:IssuerDomain"] = "https://not-used.test"
+        });
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+
+        Assert.Single(factory.Identify.RequestsTo(StubIdentify.TokenEndpoint));
+    }
+
+    [Fact]
+    public async Task ATokenErrorResponseIsShownOnTheErrorPage()
+    {
+        using var factory = new TestWebApplicationFactory();
+        factory.Identify.TokenResponder = _ => StubIdentify.OAuthError(HttpStatusCode.BadRequest, "invalid_grant", "The code is not valid.");
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        var request = await SignInFlow.StartAsync(client, factory);
+        using var callback = await SignInFlow.CompleteAsync(client, factory, request);
+
+        var errorPage = await SignInFlow.AssertErrorPageAsync(client, callback);
+        Assert.Contains("The token endpoint returned HTTP 400: invalid_grant (The code is not valid.)", errorPage);
+    }
+
+    [Fact]
+    public async Task AnIdTokenWithAnotherNonceIsRejected()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        var request = await SignInFlow.StartAsync(client, factory);
+        factory.Identify.Nonce = "another-nonce";
+
+        using var callback = await client.GetAsync(QueryHelpers.AddQueryString("/signin-oidc", new Dictionary<string, string?>
+        {
+            ["code"] = SignInFlow.Code,
+            ["state"] = request.Parameters["state"]
+        }));
+
+        var errorPage = await SignInFlow.AssertErrorPageAsync(client, callback);
+        Assert.Contains("nonce", errorPage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ADiscoveryDocumentOfAnotherIssuerStopsTheSignIn()
+    {
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:ClaimsIssuer"] = "https://other.test/runtime/oauth2"
+        });
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        using var response = await client.GetAsync("/Account/SignIn");
+
+        var errorPage = await SignInFlow.AssertErrorPageAsync(client, response);
+        Assert.Contains(
+            $"The issuer &#x27;{StubIdentify.Issuer}&#x27; in the discovery document differs from the configured issuer &#x27;https://other.test/runtime/oauth2&#x27;.",
+            errorPage);
+        Assert.Empty(factory.Identify.Requests);
+    }
+
     internal static string CodeChallenge(string codeVerifier)
     {
         return WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
+    }
+
+    internal static async Task<JsonWebToken> ValidateClientAssertionAsync(string clientAssertion, TestCertificateFile certificate)
+    {
+        var result = await new JsonWebTokenHandler().ValidateTokenAsync(clientAssertion, new TokenValidationParameters
+        {
+            IssuerSigningKey = new X509SecurityKey(certificate.PublicCertificate),
+            ValidateIssuer = false,
+            ValidateAudience = false
+        });
+        Assert.True(result.IsValid, result.Exception?.Message);
+        return (JsonWebToken)result.SecurityToken;
     }
 }

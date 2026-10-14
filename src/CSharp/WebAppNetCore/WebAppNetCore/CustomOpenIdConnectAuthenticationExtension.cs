@@ -1,19 +1,15 @@
-﻿using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using System;
 using System.Threading.Tasks;
 using System.Security.Claims;
 using System.Linq;
-using System.Collections.Generic;
 using Microsoft.IdentityModel.Logging;
-using System.Net.Http.Headers;
-using System.Net.Http;
-using System.Text.Json;
-using System.Text;
 using System.Security.Cryptography.X509Certificates;
 using WebAppNetCore.OAuth;
 
@@ -36,26 +32,15 @@ namespace WebAppNetCore
 
             services.AddHttpClient(IdentifyHttpClient.Name)
                 .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
+            services.AddSingleton<IdentifyMetadata>();
+            services.AddSingleton<ClientAuthentication>();
+            services.AddSingleton<TokenClient>();
 
             return services;
         }
 
-        private static string Encode(string? data)
-        {
-            if (string.IsNullOrEmpty(data))
-            {
-                return string.Empty;
-            }
-            // Escape spaces as '+'.
-            return Uri.EscapeDataString(data).Replace("%20", "+");
-        }
-
         private static void InitializeConnectOptions(OpenIdConnectOptions connectOptions, IConfiguration configuration)
         {
-            string accessToken = string.Empty;
-            string sessionState = string.Empty;
-            string idToken = string.Empty;
-
             connectOptions.ClientId = configuration.ClientId();
             connectOptions.ClientSecret = configuration.ClientSecret();
             connectOptions.ResponseType = configuration.ResponseType();
@@ -100,6 +85,9 @@ namespace WebAppNetCore
                 OnRedirectToIdentityProvider = async (context) =>
                 {
                     Console.WriteLine("OnRedirectToIdentityProvider.");
+                    // Fails the sign-in early when the discovery document belongs to another issuer.
+                    await context.HttpContext.RequestServices.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
+
                     context.Options.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
                     if (context.Properties.Parameters.TryGetValue("acr_values", out object acrValues))
                     {
@@ -110,8 +98,6 @@ namespace WebAppNetCore
                     {
                         context.ProtocolMessage.Parameters.Add("max_age", max_age.ToString());
                     }
-
-                    await Task.FromResult(0);
                 },
                 OnRedirectToIdentityProviderForSignOut = async (context) =>
                 {
@@ -125,91 +111,16 @@ namespace WebAppNetCore
                 {
                     Console.WriteLine("OnAuthorizationCodeReceived.");
                     Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
-                    var tokenEndpoint = configuration.TokenEndpoint();
 
-                    var httpClient = context.HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient(IdentifyHttpClient.Name);
-
-                    var parameters = new Dictionary<string, string>
-                    {
-                        { "grant_type", "authorization_code" },
-                        { "code", context.ProtocolMessage.Code },
-                        { "redirect_uri", context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey] },
-                        { "session_state", context.ProtocolMessage.SessionState},
-                        { "code_verifier", context.TokenEndpointRequest.Parameters["code_verifier"] }
-                    };
-
-                    var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
-
-                    if (configuration.TokenAuthnMethod() == "client_secret_post")
-                    {
-                        parameters["client_id"] = configuration.ClientId();
-                        parameters["client_secret"] = configuration.ClientSecret();
-                        request.Content = new FormUrlEncodedContent(parameters);
-                    }
-                    else if (configuration.TokenAuthnMethod() == "client_secret_basic")
-                    {
-                        var creds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Encode(configuration.ClientId())}:{Encode(configuration.ClientSecret())}"));
-                        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", creds);
-                        request.Content = new FormUrlEncodedContent(parameters);
-                    }
-                    else  // private_key_jwt
-                    {
-                        var cert = JwtAssertionSigningCertificate(configuration);
-                        if (cert == null || !cert.HasPrivateKey)
-                        {
-                            throw new InvalidOperationException("Client certificate is not configured or does not have a private key for private_key_jwt authentication.");
-                        }
-
-                        // Create JWT assertion for private_key_jwt
-                        var now = DateTimeOffset.UtcNow;
-                        var jti = Guid.NewGuid().ToString(); // new guid to void replay attacks check at CH2 OAuth server
-
-                        var claims = new Dictionary<string, object>
-                        {
-                            { "iss", configuration.ClientId() },
-                            { "sub", configuration.ClientId() },
-                            { "aud", tokenEndpoint },
-                            { "jti", jti },
-                            { "exp", now.AddMinutes(5).ToUnixTimeSeconds() },
-                            { "iat", now.ToUnixTimeSeconds() }
-                        };
-
-                        var handler = new JsonWebTokenHandler();
-                        // CH2 OAuth private_key_jwt authentication only support client_assertion signed by RS256 signing algorithm
-                        var signingCredentials = new X509SigningCredentials(cert, SecurityAlgorithms.RsaSha256);
-                        signingCredentials.Key.KeyId = Base64UrlEncoder.Encode(cert.GetCertHash());
-                        var tokenDescriptor = new SecurityTokenDescriptor
-                        {
-                            Claims = claims,
-                            SigningCredentials = signingCredentials
-                        };
-
-                        var clientAssertion = handler.CreateToken(tokenDescriptor);
-
-                        parameters["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
-                        parameters["client_assertion"] = clientAssertion;
-                        parameters["client_id"] = configuration.ClientId();
-
-                        request.Content = new FormUrlEncodedContent(parameters);
-                    }
-
-                    var response = await httpClient.SendAsync(request);
-                    response.EnsureSuccessStatusCode();
-
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    var tokenResponse = JsonDocument.Parse(responseContent).RootElement;
-
-                    idToken = tokenResponse.GetProperty("id_token").GetString();
-                    accessToken = tokenResponse.GetProperty("access_token").GetString();
-
-                    // Note that when "Session management" is disabled, there is no "session_state" in the token response
-                    sessionState = string.Empty;
-                    if (tokenResponse.TryGetProperty("session_state", out JsonElement sessionStateElement))
-                    {
-                        sessionState = sessionStateElement.GetString() ?? string.Empty;
-                    }
+                    var tokenResponse = await context.HttpContext.RequestServices.GetRequiredService<TokenClient>().RedeemCodeAsync(
+                        context.ProtocolMessage.Code,
+                        context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey],
+                        context.TokenEndpointRequest.Parameters["code_verifier"],
+                        context.ProtocolMessage.SessionState,
+                        context.HttpContext.RequestAborted);
 
                     // Read the Id token header to determine if it is encrypted
+                    var idToken = tokenResponse.IdToken;
                     if (!string.IsNullOrEmpty(idToken))
                     {
                         var handler = new JsonWebTokenHandler();
@@ -229,45 +140,38 @@ namespace WebAppNetCore
                             context.Options.TokenValidationParameters.TokenDecryptionKey = new X509SecurityKey(cert);
                             context.Options.TokenValidationParameters.CryptoProviderFactory = new IdentifyCryptoProviderFactory();
                         }
+
+                        // extract id token and save the sid claim
+                        var sidClaim = handler.ReadJsonWebToken(idToken).Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId);
+                        if (sidClaim != null)
+                        {
+                            OpenIdConnectHelper.LiveSessions[sidClaim.Value] = true;
+                        }
                     }
 
-                    // extract id token and save the sid claim
-                    var jtw = new JsonWebTokenHandler().ReadJsonWebToken(idToken);
-                    var sidClaim = jtw.Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId);
-                    if (sidClaim != null)
-                    {
-                        OpenIdConnectHelper.LiveSessions[sidClaim.Value] = true;
-                    }
-
-                    context.HandleCodeRedemption(accessToken, idToken);
-                    context.TokenEndpointResponse.SessionState = sessionState;
-
-                    await Task.FromResult(0);
-                },
-                OnTokenResponseReceived = async (context) =>
-                {
-                    Console.WriteLine("OnTokenResponseReceived.");
-                    sessionState = context.TokenEndpointResponse.SessionState;
-                    await Task.FromResult(0);
+                    // The handler validates and saves the tokens of this response: access_token, id_token, refresh_token, token_type, and expires_at.
+                    tokenResponse.IdToken = idToken;
+                    context.HandleCodeRedemption(tokenResponse);
                 },
                 OnTokenValidated = async (context) =>
                 {
                     Console.WriteLine("OnTokenValidated.");
-                    if (accessToken != null)
+                    // The handler skips this validation when the application redeems the code, so the sample does it here.
+                    // It checks the nonce of the ID token against the nonce cookie of this browser, and at_hash when present.
+                    context.Options.ProtocolValidator.ValidateTokenResponse(new OpenIdConnectProtocolValidationContext
                     {
-                        ClaimsIdentity identity = context.Principal.Identity as ClaimsIdentity;
-                        if (identity != null)
-                        {
-                            Claim sessionStateClaim = null;
-                            if (!string.IsNullOrEmpty(sessionState))
-                            {
-                                sessionStateClaim = new Claim(OpenIdConnectConstants.SessionState, sessionState);
-                            }
-                            if (!identity.Claims.Any(c => c.Type == OpenIdConnectConstants.SessionState) && sessionStateClaim != null)
-                            {
-                                identity.AddClaim(sessionStateClaim);
-                            }
-                        }
+                        ClientId = context.Options.ClientId,
+                        ProtocolMessage = context.TokenEndpointResponse,
+                        ValidatedIdToken = context.SecurityToken,
+                        Nonce = context.Nonce
+                    });
+
+                    // Note that when "Session management" is disabled, there is no "session_state" in the token response
+                    var sessionState = context.TokenEndpointResponse?.SessionState;
+                    if (context.Principal.Identity is ClaimsIdentity identity && !string.IsNullOrEmpty(sessionState) &&
+                        !identity.Claims.Any(c => c.Type == OpenIdConnectConstants.SessionState))
+                    {
+                        identity.AddClaim(new Claim(OpenIdConnectConstants.SessionState, sessionState));
                     }
                     await Task.FromResult(0);
                 },
@@ -280,31 +184,25 @@ namespace WebAppNetCore
                 {
                     Console.WriteLine("OnAuthenticationFailed.");
                     await Task.FromResult(0);
+                },
+                OnRemoteFailure = (context) =>
+                {
+                    Console.WriteLine("OnRemoteFailure.");
+                    ErrorPage.Redirect(context.HttpContext, ErrorPage.Describe(context.Failure));
+                    context.HandleResponse();
+                    return Task.CompletedTask;
                 }
             };
         }
 
-        private static X509Certificate2? GetDecryptionCertificate(IConfiguration configuration)
+        private static X509Certificate2 GetDecryptionCertificate(IConfiguration configuration)
         {
             // Load certificate from store or file (for demo only)
             var certPath = ConfigurationExtensions.IdTokenDecryptionCertPath(configuration);
             var certPassword = ConfigurationExtensions.IdTokenDecryptionCertPassword(configuration);
             if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(certPassword))
             {
-                return new X509Certificate2(certPath, certPassword);
-            }
-
-            return null;
-        }
-
-        private static X509Certificate2? JwtAssertionSigningCertificate(IConfiguration configuration)
-        {
-            // Load certificate from store or file (for demo only)
-            var certPath = ConfigurationExtensions.JwtAssertionSigningCertPath(configuration);
-            var certPassword = ConfigurationExtensions.JwtAssertionSigningCertPassword(configuration);
-            if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(certPassword))
-            {
-                return new X509Certificate2(certPath, certPassword);
+                return X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
             }
 
             return null;

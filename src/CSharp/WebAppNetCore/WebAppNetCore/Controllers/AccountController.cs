@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography.X509Certificates;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Controllers
 {
@@ -34,7 +35,7 @@ namespace WebAppNetCore.Controllers
 
         // GET: /Account/SignIn
         [HttpGet]
-        public IActionResult SignIn([FromQuery] string loa, [FromQuery] string max_age, [FromQuery] bool forceLogin, [FromQuery] bool isPassive)
+        public async Task<IActionResult> SignIn([FromQuery] string loa, [FromQuery] string max_age, [FromQuery] bool forceLogin, [FromQuery] bool isPassive)
         {
             var properties = new AuthenticationProperties { RedirectUri = "/" };
             if(!string.IsNullOrEmpty(loa))
@@ -47,7 +48,18 @@ namespace WebAppNetCore.Controllers
             else if(isPassive)
                 properties.SetParameter("prompt", "none");
 
-            return Challenge(properties, OpenIdConnectDefaults.AuthenticationScheme);
+            try
+            {
+                await HttpContext.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme, properties);
+            }
+            catch (OAuthClientException exception)
+            {
+                // For example a discovery document of another issuer, or a PAR error response.
+                TempData[ErrorPage.MessageKey] = exception.Message;
+                return RedirectToAction(nameof(HomeController.Error), "Home");
+            }
+
+            return new EmptyResult();
         }
 
         // GET: /Account/SignOut
