@@ -15,6 +15,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Text;
 using System.Security.Cryptography.X509Certificates;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore
 {
@@ -32,6 +33,9 @@ namespace WebAppNetCore
             .AddCookie()
 
             .AddOpenIdConnect(connectOptions => InitializeConnectOptions(connectOptions, configuration));
+
+            services.AddHttpClient(IdentifyHttpClient.Name)
+                .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
 
             return services;
         }
@@ -123,7 +127,7 @@ namespace WebAppNetCore
                     Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
                     var tokenEndpoint = configuration.TokenEndpoint();
 
-                    using var httpClient = new HttpClient();
+                    var httpClient = context.HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient(IdentifyHttpClient.Name);
 
                     var parameters = new Dictionary<string, string>
                     {

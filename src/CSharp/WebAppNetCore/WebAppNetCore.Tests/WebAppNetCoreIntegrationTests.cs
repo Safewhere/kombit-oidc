@@ -57,7 +57,7 @@ public sealed class WebAppNetCoreIntegrationTests
         Assert.Contains("Invalid issuer.", await invalidIssuerResponse.Content.ReadAsStringAsync());
 
         using var invalidSessionResponse = await client.GetAsync(
-            "/front-channel-logout?iss=https%3A%2F%2Fprovider.test&sid=unused");
+            "/front-channel-logout?sid=unused&iss=" + Uri.EscapeDataString(TestWebApplicationFactory.ProviderIssuer));
         Assert.Equal(HttpStatusCode.OK, invalidSessionResponse.StatusCode);
         Assert.Contains("Invalid session.", await invalidSessionResponse.Content.ReadAsStringAsync());
 
@@ -66,7 +66,7 @@ public sealed class WebAppNetCoreIntegrationTests
         var signOutLocation = signOutResponse.Headers.Location;
         Assert.NotNull(signOutLocation);
         Assert.Equal(
-            "https://provider.test/logout",
+            StubIdentify.EndSessionEndpoint,
             signOutLocation!.GetLeftPart(UriPartial.Path));
         var signOutParameters = QueryHelpers.ParseQuery(signOutLocation.Query);
         Assert.Equal(

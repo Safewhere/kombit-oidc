@@ -8,20 +8,27 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using System.Collections.Generic;
 using System.Net;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Tests;
 
 internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    internal const string ProviderAuthorizationEndpoint = "https://provider.test/authorize";
-    internal const string ProviderIssuer = "https://provider.test";
+    internal const string ProviderAuthorizationEndpoint = StubIdentify.AuthorizationEndpoint;
+    internal const string ProviderIssuer = StubIdentify.Issuer;
+    internal const string ClientId = "integration-test-client";
+    internal const string ClientSecret = "integration-test-secret";
 
     private readonly string authorizationEndpointMethod;
+    private readonly IDictionary<string, string?> settings;
 
-    internal TestWebApplicationFactory(string authorizationEndpointMethod = "GET")
+    internal TestWebApplicationFactory(string authorizationEndpointMethod = "GET", IDictionary<string, string?>? settings = null)
     {
         this.authorizationEndpointMethod = authorizationEndpointMethod;
+        this.settings = settings ?? new Dictionary<string, string?>();
     }
+
+    internal StubIdentify Identify { get; } = new(ClientId);
 
     protected override IWebHostBuilder CreateWebHostBuilder()
     {
@@ -34,22 +41,28 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            var values = new Dictionary<string, string?>
             {
-                ["OpenIdConnectOptions:ClientId"] = "integration-test-client",
-                ["OpenIdConnectOptions:ClientSecret"] = "integration-test-secret",
+                ["OpenIdConnectOptions:ClientId"] = ClientId,
+                ["OpenIdConnectOptions:ClientSecret"] = ClientSecret,
                 ["OpenIdConnectOptions:ResponseType"] = "code",
                 ["OpenIdConnectOptions:RequireNonce"] = "true",
                 ["OpenIdConnectOptions:ResponseMode"] = "",
                 ["OpenIdConnectOptions:AuthorizationEndpointMethod"] = authorizationEndpointMethod,
                 ["OpenIdConnectOptions:ClaimsIssuer"] = ProviderIssuer,
-                ["OpenIdConnectOptions:IssuerDomain"] = ProviderIssuer,
+                ["OpenIdConnectOptions:IssuerDomain"] = StubIdentify.Domain,
                 ["OpenIdConnectOptions:Scope"] = "openid",
                 ["OpenIdConnectOptions:EnableSessionManagement"] = "false",
                 ["OpenIdConnectOptions:EnablePostLogout"] = "false",
-                ["OpenIdConnectOptions:CheckSessionIframeUri"] = "https://provider.test/session",
+                ["OpenIdConnectOptions:CheckSessionIframeUri"] = StubIdentify.Domain + "/runtime/openidconnect/sessionlogout.idp",
                 ["OpenIdConnectOptions:TokenAuthnMethod"] = "client_secret_post"
-            });
+            };
+            foreach (var setting in settings)
+            {
+                values[setting.Key] = setting.Value;
+            }
+
+            configuration.AddInMemoryCollection(values);
         });
 
         builder.ConfigureTestServices(services =>
@@ -59,34 +72,27 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 options =>
                 {
                     options.Configuration = CreateProviderConfiguration();
-                    options.BackchannelHttpHandler = new RejectingHttpMessageHandler();
+                    options.BackchannelHttpHandler = Identify;
                 });
+            services.AddHttpClient(IdentifyHttpClient.Name)
+                .ConfigurePrimaryHttpMessageHandler(() => Identify);
         });
     }
 
-    private static OpenIdConnectConfiguration CreateProviderConfiguration()
+    private OpenIdConnectConfiguration CreateProviderConfiguration()
     {
-        return OpenIdConnectConfiguration.Create($$"""
+        var configuration = OpenIdConnectConfiguration.Create($$"""
             {
               "issuer": "{{ProviderIssuer}}",
               "authorization_endpoint": "{{ProviderAuthorizationEndpoint}}",
-              "token_endpoint": "{{ProviderIssuer}}/token",
-              "userinfo_endpoint": "{{ProviderIssuer}}/userinfo",
-              "end_session_endpoint": "{{ProviderIssuer}}/logout",
-              "jwks_uri": "{{ProviderIssuer}}/jwks",
-              "pushed_authorization_request_endpoint": "{{ProviderIssuer}}/par"
+              "token_endpoint": "{{StubIdentify.TokenEndpoint}}",
+              "userinfo_endpoint": "{{StubIdentify.UserInfoEndpoint}}",
+              "end_session_endpoint": "{{StubIdentify.EndSessionEndpoint}}",
+              "jwks_uri": "{{ProviderIssuer}}/certs.idp",
+              "pushed_authorization_request_endpoint": "{{StubIdentify.ParEndpoint}}"
             }
             """);
-    }
-
-    private sealed class RejectingHttpMessageHandler : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            throw new InvalidOperationException(
-                $"Unexpected OIDC backchannel request: {request.Method} {request.RequestUri}");
-        }
+        configuration.SigningKeys.Add(Identify.SigningKey);
+        return configuration;
     }
 }
