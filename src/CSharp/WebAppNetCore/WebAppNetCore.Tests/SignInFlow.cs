@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 using System.Net;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace WebAppNetCore.Tests;
@@ -23,10 +24,32 @@ internal static class SignInFlow
         });
     }
 
-    internal static async Task<AuthorizationRequest> StartAsync(HttpClient client, TestWebApplicationFactory factory, string query = "")
+    internal static async Task<AuthorizationRequest> StartAsync(
+        HttpClient client,
+        TestWebApplicationFactory factory,
+        IDictionary<string, string>? fields = null)
     {
-        using var response = await client.GetAsync("/Account/SignIn" + query);
+        using var response = await PostSignInAsync(client, fields);
         return ReadAuthorizationRequest(response, factory);
+    }
+
+    /// <summary>Posts the sign-in form of the home page, with its antiforgery token.</summary>
+    internal static async Task<HttpResponseMessage> PostSignInAsync(HttpClient client, IDictionary<string, string>? fields = null)
+    {
+        var page = await client.GetStringAsync("/");
+        var form = new Dictionary<string, string>(fields ?? new Dictionary<string, string>())
+        {
+            ["__RequestVerificationToken"] = ReadFormValue(page, "__RequestVerificationToken")
+        };
+        return await client.PostAsync("/Account/SignIn", new FormUrlEncodedContent(form));
+    }
+
+    internal static string ReadFormValue(string html, string name)
+    {
+        var pattern = $"<input[^>]+name=[\\\"']{Regex.Escape(name)}[\\\"'][^>]*value=[\\\"'](?<value>[^\\\"']*)[\\\"']";
+        var match = Regex.Match(html, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        Assert.True(match.Success, $"Form field '{name}' was not found.");
+        return WebUtility.HtmlDecode(match.Groups["value"].Value);
     }
 
     internal static AuthorizationRequest ReadAuthorizationRequest(HttpResponseMessage response, TestWebApplicationFactory factory)

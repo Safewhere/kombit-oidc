@@ -33,9 +33,11 @@ namespace WebAppNetCore.Controllers
             };
         }
 
-        // GET: /Account/SignIn
-        [HttpGet]
-        public async Task<IActionResult> SignIn([FromQuery] string loa, [FromQuery] string max_age, [FromQuery] bool forceLogin, [FromQuery] bool isPassive)
+        // POST: /Account/SignIn
+        // POST with an antiforgery token protects the flow initiation against CSRF (FAPI 2.0 section 5.3.3.1 item 12).
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> SignIn([FromForm] string loa, [FromForm] string max_age, [FromForm] bool forceLogin, [FromForm] bool isPassive)
         {
             var properties = new AuthenticationProperties { RedirectUri = "/" };
             if(!string.IsNullOrEmpty(loa))

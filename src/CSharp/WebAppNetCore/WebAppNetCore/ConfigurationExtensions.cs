@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 
@@ -126,6 +127,45 @@ namespace WebAppNetCore
             return configuration["OpenIdConnectOptions:JwtAssertionSigningCertPassword"];
         }
 
-        
+        // The settings below are the building blocks of the US38464 plan. Each value is parsed strictly: an invalid value
+        // throws, so that it never reads as "off". ValidateBuildingBlockSettings reads all of them at startup.
+
+        private static readonly string[] AsymmetricSigningAlgorithms =
+        {
+            "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"
+        };
+
+        /// <summary>
+        /// The allowed algorithms of the ID token signature (FAPI 2.0 section 5.4.1). Empty keeps the library default.
+        /// </summary>
+        public static string[] ValidIdTokenSigningAlgorithms(this IConfiguration configuration)
+        {
+            const string key = "OpenIdConnectOptions:ValidIdTokenSigningAlgorithms";
+            var algorithms = (configuration[key] ?? string.Empty)
+                .Split(new char[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var algorithm in algorithms)
+            {
+                if (!AsymmetricSigningAlgorithms.Contains(algorithm, StringComparer.Ordinal))
+                {
+                    throw InvalidSetting(key, algorithm, string.Join(", ", AsymmetricSigningAlgorithms));
+                }
+            }
+
+            return algorithms;
+        }
+
+        /// <summary>
+        /// Reads every building-block setting once, so that an invalid value stops the application at startup.
+        /// </summary>
+        public static void ValidateBuildingBlockSettings(this IConfiguration configuration)
+        {
+            configuration.ValidIdTokenSigningAlgorithms();
+        }
+
+        private static InvalidOperationException InvalidSetting(string key, string value, string allowedValues)
+        {
+            return new InvalidOperationException(string.Format(
+                "The setting '{0}' has the invalid value '{1}'. Allowed values: {2}.", key, value, allowedValues));
+        }
     }
 }

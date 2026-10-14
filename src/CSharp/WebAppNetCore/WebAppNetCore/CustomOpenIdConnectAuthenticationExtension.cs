@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.Cookies;
+﻿using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +9,7 @@ using System;
 using System.Threading.Tasks;
 using System.Security.Claims;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.IdentityModel.Logging;
 using System.Security.Cryptography.X509Certificates;
 using WebAppNetCore.OAuth;
@@ -20,6 +21,7 @@ namespace WebAppNetCore
         public static IServiceCollection ConfigureOpenIdServices(this IServiceCollection services, IConfiguration configuration)
         {
             IdentityModelEventSource.ShowPII = true;
+            configuration.ValidateBuildingBlockSettings();
             services.AddAuthentication(options =>
             {
                 options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -35,6 +37,7 @@ namespace WebAppNetCore
             services.AddSingleton<IdentifyMetadata>();
             services.AddSingleton<ClientAuthentication>();
             services.AddSingleton<TokenClient>();
+            services.AddSingleton<UserInfoClient>();
 
             return services;
         }
@@ -48,7 +51,8 @@ namespace WebAppNetCore
             connectOptions.SaveTokens = true;
             connectOptions.ClaimsIssuer = configuration.ClaimsIssuer();
             connectOptions.Authority = configuration.ClaimsIssuer();
-            connectOptions.GetClaimsFromUserInfoEndpoint = true;
+            // The sample calls UserInfo itself in OnTokenValidated, because the handler always uses the Bearer scheme.
+            connectOptions.GetClaimsFromUserInfoEndpoint = false;
             connectOptions.UsePkce = true;
             // Preserve direct GET/POST authorization and the sample's custom client authentication.
             // PAR is enabled automatically by newer middleware when advertised by discovery.
@@ -76,7 +80,12 @@ namespace WebAppNetCore
             connectOptions.TokenValidationParameters.ValidateAudience = true;   // by default, when we don't explicitly set ValidAudience, it is set to ClientId
             connectOptions.TokenValidationParameters.ValidateIssuer = true;
             connectOptions.TokenValidationParameters.ValidIssuer = configuration.ClaimsIssuer();
-            connectOptions.ProtocolValidator.RequireNonce = configuration.RequireNonce();
+            connectOptions.ProtocolValidator = new ShortNonceProtocolValidator { RequireNonce = configuration.RequireNonce() };
+            var validIdTokenSigningAlgorithms = configuration.ValidIdTokenSigningAlgorithms();
+            if (validIdTokenSigningAlgorithms.Length > 0)
+            {
+                connectOptions.TokenValidationParameters.ValidAlgorithms = validIdTokenSigningAlgorithms;
+            }
             connectOptions.TokenValidationParameters.NameClaimType = ClaimTypes.NameIdentifier;
             connectOptions.BackchannelHttpHandler = HttpClientHandlerProvider.Create();
 
@@ -166,19 +175,32 @@ namespace WebAppNetCore
                         Nonce = context.Nonce
                     });
 
+                    var identity = (ClaimsIdentity)context.Principal.Identity;
+
                     // Note that when "Session management" is disabled, there is no "session_state" in the token response
                     var sessionState = context.TokenEndpointResponse?.SessionState;
-                    if (context.Principal.Identity is ClaimsIdentity identity && !string.IsNullOrEmpty(sessionState) &&
-                        !identity.Claims.Any(c => c.Type == OpenIdConnectConstants.SessionState))
+                    if (!string.IsNullOrEmpty(sessionState) && !identity.Claims.Any(c => c.Type == OpenIdConnectConstants.SessionState))
                     {
                         identity.AddClaim(new Claim(OpenIdConnectConstants.SessionState, sessionState));
                     }
-                    await Task.FromResult(0);
-                },
-                OnUserInformationReceived = async (context) =>
-                {
-                    Console.WriteLine("OnUserInformationReceived.");
-                    await Task.FromResult(0);
+
+                    var userInfo = await context.HttpContext.RequestServices.GetRequiredService<UserInfoClient>().GetAsync(
+                        context.TokenEndpointResponse?.AccessToken, context.HttpContext.RequestAborted);
+                    if (userInfo != null)
+                    {
+                        Console.WriteLine("UserInfo received.");
+                        // The same processing as the handler does with GetClaimsFromUserInfoEndpoint: the sub check and the claim actions.
+                        context.Options.ProtocolValidator.ValidateUserInfoResponse(new OpenIdConnectProtocolValidationContext
+                        {
+                            UserInfoEndpointResponse = userInfo.RawResponse,
+                            ValidatedIdToken = context.SecurityToken
+                        });
+                        using var claims = JsonDocument.Parse(userInfo.Json);
+                        foreach (var action in context.Options.ClaimActions)
+                        {
+                            action.Run(claims.RootElement, identity, context.Options.ClaimsIssuer ?? context.Scheme.Name);
+                        }
+                    }
                 },
                 OnAuthenticationFailed = async (context) =>
                 {

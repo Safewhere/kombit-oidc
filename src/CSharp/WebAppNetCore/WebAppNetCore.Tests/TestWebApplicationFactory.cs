@@ -1,4 +1,8 @@
 using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Http.Json;
 using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Tests;
@@ -72,10 +77,12 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 options =>
                 {
                     options.Configuration = CreateProviderConfiguration();
-                    options.BackchannelHttpHandler = Identify;
+                    // The sample sends PAR, token, and UserInfo requests itself. The handler must not call Identify.
+                    options.BackchannelHttpHandler = new RejectingHttpMessageHandler();
                 });
             services.AddHttpClient(IdentifyHttpClient.Name)
                 .ConfigurePrimaryHttpMessageHandler(() => Identify);
+            services.AddSingleton<IStartupFilter, TestSessionEndpointStartupFilter>();
         });
     }
 
@@ -94,5 +101,53 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             """);
         configuration.SigningKeys.Add(Identify.SigningKey);
         return configuration;
+    }
+
+    private sealed class RejectingHttpMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected OIDC backchannel request: {request.Method} {request.RequestUri}");
+        }
+    }
+
+    /// <summary>
+    /// Adds /test/session, which returns the claims, tokens, and items of the cookie session as JSON.
+    /// </summary>
+    private sealed class TestSessionEndpointStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+        {
+            return app =>
+            {
+                app.Map(TestSession.Path, branch => branch.Run(async context =>
+                {
+                    var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    var session = new TestSession(
+                        result.Principal?.Claims.Select(c => new TestClaim(c.Type, c.Value)).ToList() ?? new List<TestClaim>(),
+                        result.Properties?.GetTokens().ToDictionary(t => t.Name, t => t.Value) ?? new Dictionary<string, string>(),
+                        result.Properties?.Items.ToDictionary(i => i.Key, i => i.Value) ?? new Dictionary<string, string?>());
+                    await context.Response.WriteAsJsonAsync(session);
+                }));
+                next(app);
+            };
+        }
+    }
+}
+
+internal sealed record TestClaim(string Type, string Value);
+
+internal sealed record TestSession(List<TestClaim> Claims, Dictionary<string, string> Tokens, Dictionary<string, string?> Items)
+{
+    internal const string Path = "/test/session";
+
+    internal string? Claim(string type) => Claims.FirstOrDefault(c => c.Type == type)?.Value;
+
+    internal static async Task<TestSession> GetAsync(HttpClient client)
+    {
+        return (await client.GetFromJsonAsync<TestSession>(Path))!;
     }
 }

@@ -132,13 +132,100 @@ public sealed class CodeFlowTests
         });
         using var client = SignInFlow.CreateHttpsClient(factory);
 
-        using var response = await client.GetAsync("/Account/SignIn");
+        using var response = await SignInFlow.PostSignInAsync(client);
 
         var errorPage = await SignInFlow.AssertErrorPageAsync(client, response);
         Assert.Contains(
             $"The issuer &#x27;{StubIdentify.Issuer}&#x27; in the discovery document differs from the configured issuer &#x27;https://other.test/runtime/oauth2&#x27;.",
             errorPage);
         Assert.Empty(factory.Identify.Requests);
+    }
+
+    [Fact]
+    public async Task TheNonceHas43Characters()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        var request = await SignInFlow.StartAsync(client, factory);
+
+        Assert.Matches("^[A-Za-z0-9_-]{43}$", request.Parameters["nonce"]);
+    }
+
+    [Fact]
+    public async Task AnIdTokenWithAnAlgorithmThatIsNotAllowedIsRejected()
+    {
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:ValidIdTokenSigningAlgorithms"] = "PS256"
+        });
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        var request = await SignInFlow.StartAsync(client, factory);
+
+        using var callback = await SignInFlow.CompleteAsync(client, factory, request);
+
+        var errorPage = await SignInFlow.AssertErrorPageAsync(client, callback);
+        Assert.Contains("RS256", errorPage);
+    }
+
+    [Fact]
+    public async Task AnIdTokenWithAnAllowedAlgorithmIsAccepted()
+    {
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:ValidIdTokenSigningAlgorithms"] = "PS256"
+        });
+        factory.Identify.TokenSigningAlgorithm = SecurityAlgorithms.RsaSsaPssSha256;
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+    }
+
+    [Fact]
+    public async Task TheSampleCallsUserInfoWithTheBearerSchemeAndAddsTheClaims()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+
+        var userInfoRequest = Assert.Single(factory.Identify.RequestsTo(StubIdentify.UserInfoEndpoint));
+        Assert.Equal(HttpMethod.Get, userInfoRequest.Method);
+        var session = await TestSession.GetAsync(client);
+        Assert.Equal($"Bearer {session.Tokens["access_token"]}", userInfoRequest.Header("Authorization"));
+        Assert.Equal("user@provider.test", session.Claim("email"));
+    }
+
+    [Fact]
+    public async Task ASignedUserInfoResponseIsRead()
+    {
+        using var factory = new TestWebApplicationFactory();
+        factory.Identify.UserInfoResponder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                factory.Identify.IssueToken(new Dictionary<string, object> { ["sub"] = StubIdentify.Subject, ["email"] = "signed@provider.test" }),
+                Encoding.UTF8,
+                "application/jwt")
+        };
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+
+        Assert.Equal("signed@provider.test", (await TestSession.GetAsync(client)).Claim("email"));
+    }
+
+    [Fact]
+    public async Task AUserInfoResponseForAnotherSubjectIsRejected()
+    {
+        using var factory = new TestWebApplicationFactory();
+        factory.Identify.UserInfoResponder = _ => StubIdentify.Json(HttpStatusCode.OK, new Dictionary<string, object> { ["sub"] = "someone-else" });
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        var request = await SignInFlow.StartAsync(client, factory);
+
+        using var callback = await SignInFlow.CompleteAsync(client, factory, request);
+
+        var errorPage = await SignInFlow.AssertErrorPageAsync(client, callback);
+        Assert.Contains("someone-else", errorPage);
     }
 
     internal static string CodeChallenge(string codeVerifier)

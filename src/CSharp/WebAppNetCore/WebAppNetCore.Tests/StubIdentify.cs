@@ -153,7 +153,7 @@ internal sealed class StubIdentify : HttpMessageHandler
         return Json(HttpStatusCode.OK, new Dictionary<string, object> { ["sub"] = Subject, ["email"] = "user@provider.test" });
     }
 
-    private string IssueToken(Dictionary<string, object> claims)
+    internal string IssueToken(Dictionary<string, object> claims)
     {
         var now = DateTime.UtcNow;
         var descriptor = new SecurityTokenDescriptor
