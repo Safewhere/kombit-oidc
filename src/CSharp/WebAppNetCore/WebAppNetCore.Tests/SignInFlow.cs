@@ -114,10 +114,14 @@ internal static class SignInFlow
         Assert.Fail($"Expected a redirect to the home page, but got {(int)callback.StatusCode} to '{location}': {detail}");
     }
 
-    /// <summary>Reads the message that the error page shows.</summary>
+    /// <summary>Reads the message that the error page shows. The message is in TempData, so the page shows it once.</summary>
     internal static async Task<string> ReadErrorMessageAsync(HttpClient client)
     {
-        var errorPage = await client.GetStringAsync("/Home/Error");
+        return ErrorMessage(await client.GetStringAsync("/Home/Error"));
+    }
+
+    internal static string ErrorMessage(string errorPage)
+    {
         var message = Regex.Match(errorPage, "<h3>Error Message</h3>\\s*<p>(?<message>.*?)</p>", RegexOptions.Singleline);
         return WebUtility.HtmlDecode(message.Groups["message"].Value.Trim());
     }

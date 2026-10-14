@@ -140,6 +140,17 @@ namespace WebAppNetCore
                     context.ProtocolMessage.PostLogoutRedirectUri = context.Properties.RedirectUri;
                     await Task.FromResult(0);
                 },
+                OnMessageReceived = async (context) =>
+                {
+                    Console.WriteLine("OnMessageReceived.");
+                    // The check runs for every authorization response, also an error response, before the handler reads it.
+                    var metadata = await context.HttpContext.RequestServices.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
+                    var failure = AuthorizationResponseIssuer.Validate(context.ProtocolMessage.Iss, metadata);
+                    if (failure != null)
+                    {
+                        context.Fail(failure);
+                    }
+                },
                 OnAuthorizationCodeReceived = async (context) =>
                 {
                     Console.WriteLine("OnAuthorizationCodeReceived.");

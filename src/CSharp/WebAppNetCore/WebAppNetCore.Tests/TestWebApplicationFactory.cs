@@ -38,6 +38,9 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Whether the discovery document has pushed_authorization_request_endpoint.</summary>
     internal bool PublishParEndpoint { get; init; } = true;
 
+    /// <summary>Whether the discovery document has authorization_response_iss_parameter_supported=true (RFC 9207).</summary>
+    internal bool AdvertiseIssuerParameter { get; init; }
+
     protected override IWebHostBuilder CreateWebHostBuilder()
     {
         return WebHost.CreateDefaultBuilder(Array.Empty<string>())
@@ -105,6 +108,8 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             configuration.PushedAuthorizationRequestEndpoint = StubIdentify.ParEndpoint;
         }
+
+        configuration.AuthorizationResponseIssParameterSupported = AdvertiseIssuerParameter;
 
         configuration.SigningKeys.Add(Identify.SigningKey);
         return configuration;
