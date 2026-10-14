@@ -228,6 +228,40 @@ public sealed class CodeFlowTests
         Assert.Contains("someone-else", errorPage);
     }
 
+    [Fact]
+    public async Task ConcurrentSignInsKeepTheirOwnTokens()
+    {
+        using var factory = new TestWebApplicationFactory();
+        var clients = Enumerable.Range(0, 20).Select(_ => SignInFlow.CreateHttpsClient(factory)).ToList();
+        try
+        {
+            var requests = new List<AuthorizationRequest>();
+            foreach (var client in clients)
+            {
+                requests.Add(await SignInFlow.StartAsync(client, factory));
+            }
+
+            // All callbacks run at the same time: the token responses, the session state, and the back-channel logout record of
+            // one sign-in must not reach another sign-in.
+            await Task.WhenAll(clients.Select(async (client, i) =>
+            {
+                using var callback = await SignInFlow.CompleteAsync(client, factory, requests[i], code: $"code-{i}");
+                await SignInFlow.AssertSignedInAsync(client, callback);
+            }));
+
+            for (var i = 0; i < clients.Count; i++)
+            {
+                var session = await TestSession.GetAsync(clients[i]);
+                Assert.Equal(factory.Identify.AccessTokensByCode[$"code-{i}"], session.Tokens["access_token"]);
+                Assert.Equal($"session-code-{i}", session.Claim("sid"));
+            }
+        }
+        finally
+        {
+            clients.ForEach(c => c.Dispose());
+        }
+    }
+
     internal static string CodeChallenge(string codeVerifier)
     {
         return WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));

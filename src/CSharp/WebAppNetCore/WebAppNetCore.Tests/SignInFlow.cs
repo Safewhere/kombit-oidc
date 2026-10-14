@@ -75,12 +75,14 @@ internal static class SignInFlow
         HttpClient client,
         TestWebApplicationFactory factory,
         AuthorizationRequest request,
-        string? iss = StubIdentify.Issuer)
+        string? iss = StubIdentify.Issuer,
+        string code = Code)
     {
         factory.Identify.Nonce = request.Parameters.GetValueOrDefault("nonce");
+        factory.Identify.RegisterCode(code, request.Parameters.GetValueOrDefault("nonce"));
         var query = new Dictionary<string, string?>
         {
-            ["code"] = Code,
+            ["code"] = code,
             ["state"] = request.Parameters["state"]
         };
         if (iss != null)

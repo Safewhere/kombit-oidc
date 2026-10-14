@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -42,8 +43,20 @@ internal sealed class StubIdentify : HttpMessageHandler
     /// <summary>The algorithm of the ID tokens and access tokens that the stub issues.</summary>
     internal string TokenSigningAlgorithm { get; set; } = SecurityAlgorithms.RsaSha256;
 
-    /// <summary>The nonce that the next ID token contains. Tests copy it from the authorization request.</summary>
+    /// <summary>
+    /// The nonce of an ID token for a code that was not registered with RegisterCode.
+    /// </summary>
     internal string? Nonce { get; set; }
+
+    /// <summary>The access tokens that the default token response issued, by authorization code.</summary>
+    internal ConcurrentDictionary<string, string> AccessTokensByCode { get; } = new();
+
+    private ConcurrentDictionary<string, string?> NoncesByCode { get; } = new();
+
+    /// <summary>
+    /// Registers the nonce for the ID token of an authorization code, so that concurrent flows get their own nonce.
+    /// </summary>
+    internal void RegisterCode(string code, string? nonce) => NoncesByCode[code] = nonce;
 
     internal Func<RecordedRequest, HttpResponseMessage>? ParResponder { get; set; }
 
@@ -64,12 +77,12 @@ internal sealed class StubIdentify : HttpMessageHandler
 
     internal IReadOnlyList<RecordedRequest> RequestsTo(string url) => Requests.Where(r => r.Url == url).ToList();
 
-    internal string IssueIdToken(string? nonce = null)
+    internal string IssueIdToken(string? nonce = null, string sessionId = SessionId)
     {
         var claims = new Dictionary<string, object>
         {
             ["sub"] = Subject,
-            ["sid"] = SessionId,
+            ["sid"] = sessionId,
             ["name"] = "Test User"
         };
         if (nonce != null)
@@ -137,12 +150,20 @@ internal sealed class StubIdentify : HttpMessageHandler
 
     internal HttpResponseMessage DefaultTokenResponse(RecordedRequest request)
     {
+        var code = request.Form.GetValueOrDefault("code");
+        var nonce = code != null && NoncesByCode.TryGetValue(code, out var registeredNonce) ? registeredNonce : Nonce;
+        var accessToken = IssueAccessToken();
+        if (code != null)
+        {
+            AccessTokensByCode[code] = accessToken;
+        }
+
         var body = new Dictionary<string, object>
         {
-            ["access_token"] = IssueAccessToken(),
+            ["access_token"] = accessToken,
             ["token_type"] = "Bearer",
             ["expires_in"] = 300,
-            ["id_token"] = IssueIdToken(Nonce),
+            ["id_token"] = IssueIdToken(nonce, code == null ? SessionId : "session-" + code),
             ["refresh_token"] = RefreshToken
         };
         return Json(HttpStatusCode.OK, body);

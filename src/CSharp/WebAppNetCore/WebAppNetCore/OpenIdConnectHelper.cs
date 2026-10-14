@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
@@ -15,8 +16,8 @@ namespace WebAppNetCore
 {
     public static class OpenIdConnectHelper
     {
-        // Keep track of live sessions for back channel logout support
-        public static Dictionary<string, bool> LiveSessions = new Dictionary<string, bool>();
+        // Keep track of live sessions for back channel logout support. Concurrent sign-ins and logouts write it at the same time.
+        public static ConcurrentDictionary<string, bool> LiveSessions = new ConcurrentDictionary<string, bool>();
 
         public static readonly string[] IdTokenEncryptedResponseAlgs = { "RSA-OAEP", "RSA-OAEP-256", "A128KW", "A192KW", "A256KW" };
         public static readonly string[] IdTokenEncryptedResponseEnc = { "A128CBC-HS256", "A192CBC-HS384", "A256CBC-HS512", "A128GCM", "A192GCM", "A256GCM" };
