@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
@@ -16,33 +17,69 @@ namespace WebAppNetCore.OAuth
     {
         private readonly IHttpClientFactory httpClientFactory;
         private readonly IdentifyMetadata identifyMetadata;
+        private readonly IConfiguration configuration;
 
-        public UserInfoClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata)
+        public UserInfoClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, IConfiguration configuration)
         {
             this.httpClientFactory = httpClientFactory;
             this.identifyMetadata = identifyMetadata;
+            this.configuration = configuration;
         }
 
         /// <summary>
-        /// Returns null when the discovery document has no UserInfo endpoint or when there is no access token, as the handler does.
+        /// Calls UserInfo with the scheme of the token type: DPoP with a proof for a DPoP-bound access token (RFC 9449 section 7),
+        /// and Bearer otherwise. Returns null when the discovery document has no UserInfo endpoint or when there is no access token,
+        /// as the handler does.
         /// </summary>
-        public async Task<UserInfoResponse> GetAsync(string accessToken, CancellationToken cancellationToken)
+        public async Task<UserInfoResponse> GetAsync(string accessToken, string tokenType, ClientSession session, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            if (string.IsNullOrEmpty(metadata.UserInfoEndpoint) || string.IsNullOrEmpty(accessToken))
+            var userInfoEndpoint = metadata.UserInfoEndpoint;
+            if (string.IsNullOrEmpty(userInfoEndpoint) || string.IsNullOrEmpty(accessToken))
             {
                 return null;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, metadata.UserInfoEndpoint);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-            using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            DPoPKey dpopKey = null;
+            if (string.Equals(tokenType, "DPoP", StringComparison.OrdinalIgnoreCase))
             {
-                throw await OAuthErrorResponseException.CreateAsync("UserInfo endpoint", response);
+                dpopKey = session?.DPoPKey ?? throw new OAuthClientException(
+                    "The access token is bound to a DPoP key, but the key of this sign-in is no longer available, for example after a restart. Sign in again.");
             }
 
+            string dpopNonce = null;
+            for (var attempt = 1; ; attempt++)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, userInfoEndpoint);
+                if (dpopKey != null)
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
+                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "GET", userInfoEndpoint, accessToken, dpopNonce));
+                }
+                else
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                }
+
+                using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
+                    if (challengedNonce != null)
+                    {
+                        dpopNonce = challengedNonce;
+                        continue;
+                    }
+
+                    throw await OAuthErrorResponseException.CreateAsync("UserInfo endpoint", response);
+                }
+
+                return await ReadResponseAsync(response, cancellationToken);
+            }
+        }
+
+        private static async Task<UserInfoResponse> ReadResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
             var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
             var mediaType = response.Content.Headers.ContentType?.MediaType;
             if (string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase))

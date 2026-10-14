@@ -104,7 +104,16 @@ namespace WebAppNetCore
                     // Fails the sign-in early when the discovery document belongs to another issuer.
                     await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
                     // The handle goes into the state parameter, because the handler protects the properties after this event.
-                    services.GetRequiredService<ClientSessionStore>().Create(context.Properties);
+                    var session = services.GetRequiredService<ClientSessionStore>().Create(context.Properties);
+                    if (configuration.UsesDPoPKey())
+                    {
+                        // One key for each sign-in. The PAR proof, the token proofs, and the UserInfo proofs of the sign-in use it.
+                        session.DPoPKey = DPoPKey.Create();
+                        if (configuration.DPoPSendDPoPJkt())
+                        {
+                            context.ProtocolMessage.Parameters["dpop_jkt"] = session.DPoPKey.Thumbprint;
+                        }
+                    }
 
                     context.Options.AuthenticationMethod = configuration.AuthorizationEndpointMethod();
                     if (context.Properties.Parameters.TryGetValue("acr_values", out object acrValues))
@@ -124,8 +133,8 @@ namespace WebAppNetCore
                     // The sample sends the request itself, with the configured client authentication. After HandlePush, the handler
                     // sends nothing and redirects the browser with client_id and request_uri only. The event allows only one of
                     // HandlePush, SkipPush, and HandleClientAuthentication.
-                    var result = await services.GetRequiredService<PushedAuthorizationClient>().PushAsync(context.ProtocolMessage, context.HttpContext.RequestAborted);
                     var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
+                    var result = await services.GetRequiredService<PushedAuthorizationClient>().PushAsync(context.ProtocolMessage, session, context.HttpContext.RequestAborted);
                     if (session != null)
                     {
                         session.PushedAuthorization = result;
@@ -156,11 +165,13 @@ namespace WebAppNetCore
                     Console.WriteLine("OnAuthorizationCodeReceived.");
                     Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
 
-                    var tokenResponse = await context.HttpContext.RequestServices.GetRequiredService<TokenClient>().RedeemCodeAsync(
+                    var services = context.HttpContext.RequestServices;
+                    var tokenResponse = await services.GetRequiredService<TokenClient>().RedeemCodeAsync(
                         context.ProtocolMessage.Code,
                         context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey],
                         context.TokenEndpointRequest.Parameters["code_verifier"],
                         context.ProtocolMessage.SessionState,
+                        services.GetRequiredService<ClientSessionStore>().Get(context.Properties),
                         context.HttpContext.RequestAborted);
 
                     // Read the Id token header to determine if it is encrypted
@@ -219,8 +230,12 @@ namespace WebAppNetCore
                         identity.AddClaim(new Claim(OpenIdConnectConstants.SessionState, sessionState));
                     }
 
-                    var userInfo = await context.HttpContext.RequestServices.GetRequiredService<UserInfoClient>().GetAsync(
-                        context.TokenEndpointResponse?.AccessToken, context.HttpContext.RequestAborted);
+                    var services = context.HttpContext.RequestServices;
+                    var userInfo = await services.GetRequiredService<UserInfoClient>().GetAsync(
+                        context.TokenEndpointResponse?.AccessToken,
+                        context.TokenEndpointResponse?.TokenType,
+                        services.GetRequiredService<ClientSessionStore>().Get(context.Properties),
+                        context.HttpContext.RequestAborted);
                     if (userInfo != null)
                     {
                         Console.WriteLine("UserInfo received.");

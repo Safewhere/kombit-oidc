@@ -152,7 +152,10 @@ internal sealed class StubIdentify : HttpMessageHandler
     {
         var code = request.Form.GetValueOrDefault("code");
         var nonce = code != null && NoncesByCode.TryGetValue(code, out var registeredNonce) ? registeredNonce : Nonce;
-        var accessToken = IssueAccessToken();
+        // Like Identify, a request with a DPoP proof gets an access token that is bound to the proof key.
+        var proof = request.Header("DPoP");
+        var jkt = proof == null ? null : DPoPProof.Read(proof).Thumbprint;
+        var accessToken = IssueAccessToken(jkt);
         if (code != null)
         {
             AccessTokensByCode[code] = accessToken;
@@ -161,7 +164,7 @@ internal sealed class StubIdentify : HttpMessageHandler
         var body = new Dictionary<string, object>
         {
             ["access_token"] = accessToken,
-            ["token_type"] = "Bearer",
+            ["token_type"] = jkt == null ? "Bearer" : "DPoP",
             ["expires_in"] = 300,
             ["id_token"] = IssueIdToken(nonce, code == null ? SessionId : "session-" + code),
             ["refresh_token"] = RefreshToken

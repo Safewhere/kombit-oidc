@@ -182,6 +182,46 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// Every token request (code and refresh) carries a DPoP proof, and the token response must have token_type=DPoP (RFC 9449 section 5).
+        /// </summary>
+        public static bool DPoPBindAccessTokens(this IConfiguration configuration)
+        {
+            return ParseBool(configuration, "OpenIdConnectOptions:DPoP:BindAccessTokens");
+        }
+
+        /// <summary>
+        /// The authorization request, pushed or direct, carries dpop_jkt, so that Identify binds the code to the key (RFC 9449 section 10).
+        /// </summary>
+        public static bool DPoPSendDPoPJkt(this IConfiguration configuration)
+        {
+            return ParseBool(configuration, "OpenIdConnectOptions:DPoP:SendDPoPJkt");
+        }
+
+        /// <summary>
+        /// The PAR request carries a DPoP proof, so that Identify binds the code to the key (RFC 9449 section 10.1). No effect on a direct request.
+        /// </summary>
+        public static bool DPoPSendProofToParEndpoint(this IConfiguration configuration)
+        {
+            return ParseBool(configuration, "OpenIdConnectOptions:DPoP:SendProofToParEndpoint");
+        }
+
+        /// <summary>
+        /// The alg value of DPoP proofs. Identify restricts it per connection with the rule clientJwt.signingAlgorithms.
+        /// </summary>
+        public static string DPoPSigningAlgorithm(this IConfiguration configuration)
+        {
+            return ParseRsaSigningAlgorithm(configuration, "OpenIdConnectOptions:DPoP:SigningAlgorithm", SecurityAlgorithms.RsaSsaPssSha256);
+        }
+
+        /// <summary>
+        /// Whether a sign-in needs a DPoP key. This is not a setting: each DPoP setting uses the same key of the sign-in.
+        /// </summary>
+        public static bool UsesDPoPKey(this IConfiguration configuration)
+        {
+            return configuration.DPoPBindAccessTokens() || configuration.DPoPSendDPoPJkt() || configuration.DPoPSendProofToParEndpoint();
+        }
+
+        /// <summary>
         /// Reads every building-block setting once, so that an invalid value stops the application at startup.
         /// </summary>
         public static void ValidateBuildingBlockSettings(this IConfiguration configuration)
@@ -190,6 +230,26 @@ namespace WebAppNetCore
             configuration.ClientAssertionAudience();
             configuration.ClientAssertionSigningAlgorithm();
             configuration.PushedAuthorization();
+            configuration.DPoPBindAccessTokens();
+            configuration.DPoPSendDPoPJkt();
+            configuration.DPoPSendProofToParEndpoint();
+            configuration.DPoPSigningAlgorithm();
+        }
+
+        private static bool ParseBool(IConfiguration configuration, string key)
+        {
+            var value = configuration[key];
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            if (!bool.TryParse(value, out var result))
+            {
+                throw InvalidSetting(key, value, "true, false");
+            }
+
+            return result;
         }
 
         // The RSA algorithms that Identify accepts for client assertions and DPoP proofs.

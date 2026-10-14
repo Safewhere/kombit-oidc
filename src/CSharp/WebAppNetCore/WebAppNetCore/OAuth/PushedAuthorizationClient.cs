@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace WebAppNetCore.OAuth
@@ -17,32 +18,57 @@ namespace WebAppNetCore.OAuth
         private readonly IHttpClientFactory httpClientFactory;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
+        private readonly IConfiguration configuration;
 
-        public PushedAuthorizationClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication)
+        public PushedAuthorizationClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration)
         {
             this.httpClientFactory = httpClientFactory;
             this.identifyMetadata = identifyMetadata;
             this.clientAuthentication = clientAuthentication;
+            this.configuration = configuration;
         }
 
-        public async Task<PushedAuthorizationResult> PushAsync(OpenIdConnectMessage authorizationRequest, CancellationToken cancellationToken)
+        public async Task<PushedAuthorizationResult> PushAsync(OpenIdConnectMessage authorizationRequest, ClientSession session, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var parEndpoint = IdentifyMetadata.RequireEndpoint(metadata.PushedAuthorizationRequestEndpoint, "pushed_authorization_request_endpoint");
 
-            // All authorization parameters of the handler: client_id, response_type, redirect_uri, scope, state, nonce, PKCE, and the
-            // parameters that OnRedirectToIdentityProvider added.
-            var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
-            using var request = new HttpRequestMessage(HttpMethod.Post, parEndpoint);
-            clientAuthentication.Apply(request, parameters, metadata);
-            request.Content = new FormUrlEncodedContent(parameters);
+            // With a proof, Identify binds the code to the proof key, as with dpop_jkt. With both, the keys must be the same.
+            var dpopKey = configuration.DPoPSendProofToParEndpoint() ? session?.DPoPKey : null;
 
-            using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            string dpopNonce = null;
+            for (var attempt = 1; ; attempt++)
             {
-                throw await OAuthErrorResponseException.CreateAsync("PAR endpoint", response);
-            }
+                // All authorization parameters of the handler: client_id, response_type, redirect_uri, scope, state, nonce, PKCE, and
+                // the parameters that OnRedirectToIdentityProvider added.
+                var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
+                using var request = new HttpRequestMessage(HttpMethod.Post, parEndpoint);
+                clientAuthentication.Apply(request, parameters, metadata);
+                if (dpopKey != null)
+                {
+                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", parEndpoint, nonce: dpopNonce));
+                }
+                request.Content = new FormUrlEncodedContent(parameters);
 
+                using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
+                    if (challengedNonce != null)
+                    {
+                        dpopNonce = challengedNonce;
+                        continue;
+                    }
+
+                    throw await OAuthErrorResponseException.CreateAsync("PAR endpoint", response);
+                }
+
+                return await ReadResultAsync(response, cancellationToken);
+            }
+        }
+
+        private static async Task<PushedAuthorizationResult> ReadResultAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
             if (!body.RootElement.TryGetProperty("request_uri", out var requestUri) || requestUri.ValueKind != JsonValueKind.String)
             {

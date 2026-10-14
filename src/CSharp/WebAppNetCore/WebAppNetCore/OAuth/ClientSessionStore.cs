@@ -69,8 +69,12 @@ namespace WebAppNetCore.OAuth
         /// <summary>The PAR response of the sign-in, or null when the request was not pushed.</summary>
         public PushedAuthorizationResult PushedAuthorization { get; set; }
 
+        /// <summary>The DPoP key of the sign-in, or null when no DPoP setting is on.</summary>
+        public DPoPKey DPoPKey { get; set; }
+
         public void Dispose()
         {
+            DPoPKey?.Dispose();
         }
     }
 }
