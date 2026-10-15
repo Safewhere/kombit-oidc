@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "WebAppNetCore",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "src/CSharp/WebAppNetCore/WebAppNetCore",
+        "--no-launch-profile",
+        "--",
+        "--environment",
+        "Development",
+        "--urls",
+        "https://localhost:44390"
+      ],
+      "port": 44390,
+      "url": "https://localhost:44390"
+    }
+  ]
+}

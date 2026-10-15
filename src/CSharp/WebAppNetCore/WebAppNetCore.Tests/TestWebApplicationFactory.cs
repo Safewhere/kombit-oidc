@@ -73,6 +73,10 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 values[setting.Key] = setting.Value;
             }
 
+            // Only the values above. The appsettings.json of a developer, user secrets, and environment variables must not
+            // change a test result. A building-block setting that a test does not set uses its default, which is the value
+            // of the committed appsettings.json.
+            configuration.Sources.Clear();
             configuration.AddInMemoryCollection(values);
         });
 

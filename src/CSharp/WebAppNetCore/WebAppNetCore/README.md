@@ -197,7 +197,7 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | `WrongDPoPKey` | Sign in | A token proof of a new key | `invalid_grant` for a bound code |
 | `WrongHtu` | Sign in | A token proof with the authorization endpoint as `htu` | `invalid_dpop_proof` |
 | `SmallDPoPKey` | Sign in | A token proof of an RSA 1024 key | `invalid_dpop_proof` |
-| `RedeemCodeTwice` | Sign in | A second redemption after a successful one | `invalid_grant` for the second; the trace shows it |
+| `RedeemCodeTwice` | Sign in | A second redemption after a successful one | `invalid_grant` for the second. Identify then revokes the tokens of the first redemption (RFC 6749 section 4.1.2), so the sign-in stops at UserInfo with `invalid_token`. With a server that does not revoke them, the sign-in continues and the trace shows the second response |
 | `BearerAtUserInfo` | Call UserInfo | The Bearer scheme with a DPoP-bound token | `invalid_token` |
 | `MissingAth` | Call UserInfo | A proof without `ath` | `invalid_token` |
 | `ReplayDPoPProof` | Call UserInfo | The same proof in two calls | `invalid_token` for the second call |

@@ -232,7 +232,8 @@ namespace WebAppNetCore
 
                     if (fault == Fault.RedeemCodeTwice)
                     {
-                        // The trace shows the response to the second redemption. The sign-in continues with the first response.
+                        // The trace shows the response to the second redemption. The sign-in continues with the first response,
+                        // unless the server revokes the tokens of the code after the second redemption (Identify does), and UserInfo then fails.
                         try
                         {
                             await tokenClient.RedeemCodeAsync(

@@ -62,7 +62,7 @@ namespace WebAppNetCore.OAuth
             [Fault.WrongDPoPKey] = "A token proof of a new key. Expected: invalid_grant for a bound code.",
             [Fault.WrongHtu] = "A token proof with the authorization endpoint as htu. Expected: invalid_dpop_proof.",
             [Fault.SmallDPoPKey] = "A token proof of an RSA 1024 key. Expected: invalid_dpop_proof.",
-            [Fault.RedeemCodeTwice] = "A second redemption of the code after a successful one. Expected: invalid_grant for the second; the sign-in continues.",
+            [Fault.RedeemCodeTwice] = "A second redemption of the code after a successful one. Expected: invalid_grant for the second; Identify then revokes the tokens of the code, so the sign-in fails at UserInfo with invalid_token.",
             [Fault.BearerAtUserInfo] = "The Bearer scheme with a DPoP-bound token. Expected: invalid_token.",
             [Fault.MissingAth] = "A UserInfo proof without ath. Expected: invalid_token.",
             [Fault.ReplayDPoPProof] = "The same UserInfo proof in two calls. Expected: invalid_token for the second call.",
