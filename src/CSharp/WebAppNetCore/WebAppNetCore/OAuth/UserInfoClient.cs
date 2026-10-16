@@ -49,6 +49,8 @@ namespace WebAppNetCore.OAuth
                     "The access token is bound to a DPoP key, but the key of this sign-in is no longer available, for example after a restart. Sign in again.");
             }
 
+            // UserInfoProofOtherKey signs a valid proof with a new key: the use of the access token by another key holder.
+            using var otherKey = dpopKey != null && fault == Fault.UserInfoProofOtherKey ? DPoPKey.Create() : null;
             string dpopNonce = null;
             string replayedProof = null;
             for (var attempt = 1; ; attempt++)
@@ -57,8 +59,7 @@ namespace WebAppNetCore.OAuth
                 string proof = null;
                 if (dpopKey != null)
                 {
-                    proof = replayedProof ?? DPoPProofFactory.Create(
-                        dpopKey, configuration.DPoPSigningAlgorithm(), "GET", userInfoEndpoint, fault == Fault.MissingAth ? null : accessToken, dpopNonce);
+                    proof = replayedProof ?? CreateProof(fault, otherKey ?? dpopKey, userInfoEndpoint, metadata.TokenEndpoint, accessToken, dpopNonce);
                     request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
                     request.Headers.Add("DPoP", proof);
                 }
@@ -94,6 +95,22 @@ namespace WebAppNetCore.OAuth
                 session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType);
                 return userInfo;
             }
+        }
+
+        /// <summary>
+        /// The UserInfo proof, changed by MissingAth, UserInfoProofWrongHtm, UserInfoProofWrongHtu, or UserInfoProofWrongAth.
+        /// </summary>
+        private string CreateProof(Fault fault, DPoPKey key, string userInfoEndpoint, string tokenEndpoint, string accessToken, string nonce)
+        {
+            var method = fault == Fault.UserInfoProofWrongHtm ? "POST" : "GET";
+            var htu = fault == Fault.UserInfoProofWrongHtu ? IdentifyMetadata.RequireEndpoint(tokenEndpoint, "token_endpoint") : userInfoEndpoint;
+            var athToken = fault switch
+            {
+                Fault.MissingAth => null,
+                Fault.UserInfoProofWrongAth => accessToken + "-other",
+                _ => accessToken
+            };
+            return DPoPProofFactory.Create(key, configuration.DPoPSigningAlgorithm(), method, htu, athToken, nonce);
         }
 
         private static async Task<UserInfoResponse> ReadResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)

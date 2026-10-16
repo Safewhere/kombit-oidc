@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Microsoft.Extensions.Configuration;
@@ -28,31 +29,34 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Adds the client authentication to the request. Returns the client assertion for private_key_jwt, and null otherwise.
+        /// Give clientId to authenticate as another client with the credentials of this one, for the faults RedeemAsOtherClient
+        /// and RefreshAsOtherClient.
         /// </summary>
-        public string Apply(HttpRequestMessage request, IDictionary<string, string> parameters, OpenIdConnectConfiguration metadata, Fault fault = Fault.None)
+        public string Apply(HttpRequestMessage request, IDictionary<string, string> parameters, OpenIdConnectConfiguration metadata, Fault fault = Fault.None, string clientId = null)
         {
+            clientId ??= configuration.ClientId();
             switch (configuration.TokenAuthnMethod())
             {
                 case "client_secret_post":
-                    parameters["client_id"] = configuration.ClientId();
+                    parameters["client_id"] = clientId;
                     parameters["client_secret"] = configuration.ClientSecret();
                     return null;
 
                 case "client_secret_basic":
-                    var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Encode(configuration.ClientId())}:{Encode(configuration.ClientSecret())}"));
+                    var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Encode(clientId)}:{Encode(configuration.ClientSecret())}"));
                     request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
                     return null;
 
                 default: // private_key_jwt
-                    var clientAssertion = CreateClientAssertion(metadata, fault);
+                    var clientAssertion = CreateClientAssertion(metadata, fault, clientId);
                     parameters["client_assertion_type"] = ClientAssertionType;
                     parameters["client_assertion"] = clientAssertion;
-                    parameters["client_id"] = configuration.ClientId();
+                    parameters["client_id"] = clientId;
                     return clientAssertion;
             }
         }
 
-        private string CreateClientAssertion(OpenIdConnectConfiguration metadata, Fault fault)
+        private string CreateClientAssertion(OpenIdConnectConfiguration metadata, Fault fault, string clientId)
         {
             using var cert = JwtAssertionSigningCertificate();
             if (cert == null || !cert.HasPrivateKey)
@@ -65,27 +69,54 @@ namespace WebAppNetCore.OAuth
                 ? metadata.Issuer
                 : IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
 
-            var issuedAt = fault == Fault.AssertionFutureIat ? DateTimeOffset.UtcNow.AddSeconds(120) : DateTimeOffset.UtcNow;
+            var issuedAt = fault switch
+            {
+                Fault.AssertionFutureIat => DateTimeOffset.UtcNow.AddSeconds(120),
+                Fault.AssertionExpired => DateTimeOffset.UtcNow.AddSeconds(-120),
+                _ => DateTimeOffset.UtcNow
+            };
+            var expiresAt = fault == Fault.AssertionExpired ? DateTimeOffset.UtcNow.AddSeconds(-60) : issuedAt.AddMinutes(5);
             var claims = new Dictionary<string, object>
             {
-                { "iss", configuration.ClientId() },
-                { "sub", configuration.ClientId() },
+                { "iss", fault == Fault.AssertionIssuerNotClient ? configuration.OtherClientId() : clientId },
+                { "sub", clientId },
                 { "aud", fault == Fault.AssertionAudienceArray ? new[] { audience } : (object)audience },
                 { "jti", Guid.NewGuid().ToString() }, // a new value for each assertion, because Identify rejects a replayed jti
-                { "exp", issuedAt.AddMinutes(5).ToUnixTimeSeconds() },
+                { "exp", expiresAt.ToUnixTimeSeconds() },
                 { "iat", issuedAt.ToUnixTimeSeconds() }
             };
 
+            // The kid of the client key, also for the forged assertions, so that Identify finds the key that must verify them.
+            var keyId = Base64UrlEncoder.Encode(cert.GetCertHash());
+            switch (fault)
+            {
+                case Fault.AssertionAlgNone:
+                    return FaultJwt.Unsigned(new Dictionary<string, object> { ["typ"] = "JWT", ["kid"] = keyId }, claims);
+
+                case Fault.AssertionHmacWithClientSecret:
+                    return FaultJwt.Hmac(
+                        new Dictionary<string, object> { ["typ"] = "JWT" }, claims, Encoding.UTF8.GetBytes(configuration.ClientSecret() ?? string.Empty));
+
+                case Fault.AssertionWithoutExp:
+                    claims.Remove("exp");
+                    break;
+            }
+
             // Identify accepts RS256 to PS512, restricted per connection by the rule clientJwt.signingAlgorithms.
-            var signingCredentials = new X509SigningCredentials(cert, configuration.ClientAssertionSigningAlgorithm());
-            signingCredentials.Key.KeyId = Base64UrlEncoder.Encode(cert.GetCertHash());
+            using var otherKey = fault == Fault.AssertionSignedByOtherKey ? RSA.Create(2048) : null;
+            var signingCredentials = otherKey == null
+                ? new X509SigningCredentials(cert, configuration.ClientAssertionSigningAlgorithm())
+                : new SigningCredentials(new RsaSecurityKey(otherKey), configuration.ClientAssertionSigningAlgorithm());
+            signingCredentials.Key.KeyId = keyId;
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Claims = claims,
                 SigningCredentials = signingCredentials
             };
 
-            return new JsonWebTokenHandler().CreateToken(tokenDescriptor);
+            // Without default times for the faults, so that AssertionWithoutExp has no exp and AssertionExpired gets no nbf after its exp.
+            var defaultTimes = fault != Fault.AssertionWithoutExp && fault != Fault.AssertionExpired;
+            return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = defaultTimes }.CreateToken(tokenDescriptor);
         }
 
         private X509Certificate2 JwtAssertionSigningCertificate()

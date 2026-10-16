@@ -20,6 +20,41 @@ namespace WebAppNetCore.OAuth
         /// </summary>
         public static string Create(DPoPKey key, string algorithm, string httpMethod, string httpUri, string accessToken = null, string nonce = null)
         {
+            return Sign(key.SecurityKey, key, algorithm, Claims(httpMethod, httpUri, accessToken, nonce));
+        }
+
+        /// <summary>
+        /// Creates the proof that a fault asks for, or a correct proof for any other fault: ProofAlgNone (unsigned), ProofHmac
+        /// (HS256 with a random key), ProofSignatureOtherKey (the jwk of the key, signed with another key), or ProofWithoutJti.
+        /// </summary>
+        public static string Create(Fault fault, DPoPKey key, string algorithm, string httpMethod, string httpUri, string accessToken = null, string nonce = null)
+        {
+            var claims = Claims(httpMethod, httpUri, accessToken, nonce);
+            switch (fault)
+            {
+                case Fault.ProofAlgNone:
+                    return FaultJwt.Unsigned(Header(key), claims);
+
+                case Fault.ProofHmac:
+                    return FaultJwt.Hmac(Header(key), claims, RandomNumberGenerator.GetBytes(32));
+
+                case Fault.ProofSignatureOtherKey:
+                    using (var otherKey = DPoPKey.Create())
+                    {
+                        return Sign(otherKey.SecurityKey, key, algorithm, claims);
+                    }
+
+                case Fault.ProofWithoutJti:
+                    claims.Remove("jti");
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                default:
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+            }
+        }
+
+        private static Dictionary<string, object> Claims(string httpMethod, string httpUri, string accessToken, string nonce)
+        {
             var claims = new Dictionary<string, object>
             {
                 ["jti"] = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(16)),
@@ -37,12 +72,23 @@ namespace WebAppNetCore.OAuth
                 claims["nonce"] = nonce;
             }
 
+            return claims;
+        }
+
+        private static Dictionary<string, object> Header(DPoPKey key)
+        {
+            return new Dictionary<string, object> { ["typ"] = ProofType, ["jwk"] = key.PublicJwk };
+        }
+
+        /// <summary>Signs the claims with the signing key; the jwk header is the public key of headerKey.</summary>
+        private static string Sign(SecurityKey signingKey, DPoPKey headerKey, string algorithm, Dictionary<string, object> claims)
+        {
             var descriptor = new SecurityTokenDescriptor
             {
                 TokenType = ProofType,
                 Claims = claims,
-                SigningCredentials = new SigningCredentials(key.SecurityKey, algorithm),
-                AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = key.PublicJwk },
+                SigningCredentials = new SigningCredentials(signingKey, algorithm),
+                AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = headerKey.PublicJwk },
                 IncludeKeyIdInHeader = false
             };
 

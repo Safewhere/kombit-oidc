@@ -37,6 +37,17 @@ namespace WebAppNetCore.OAuth
                 { "redirect_uri", redirectUri },
                 { "code_verifier", codeVerifier }
             };
+            if (fault == Fault.MissingCodeVerifier)
+            {
+                parameters.Remove("code_verifier");
+            }
+            else if (fault == Fault.TokenRedirectUriMismatch)
+            {
+                // Another path on the same origin, so that a connection can register it and only the match with the
+                // authorization request rejects it.
+                parameters["redirect_uri"] = new Uri(new Uri(redirectUri), "/other-callback").ToString();
+            }
+
             if (!string.IsNullOrEmpty(sessionState))
             {
                 parameters["session_state"] = sessionState;
@@ -97,7 +108,20 @@ namespace WebAppNetCore.OAuth
 
             try
             {
-                var tokenResponse = await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken);
+                OpenIdConnectMessage tokenResponse;
+                if (fault == Fault.ReplayDPoPProofOnRefresh && dpopKey != null)
+                {
+                    // The result is the response to the second request, which sends the proof of the first one again.
+                    var replay = new ProofReplay();
+                    await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken, replay);
+                    session?.Trace.Add("Fault injection", "ReplayDPoPProofOnRefresh: the next refresh request sends the same proof");
+                    tokenResponse = await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken, replay);
+                }
+                else
+                {
+                    tokenResponse = await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken);
+                }
+
                 if (fault == Fault.NewDPoPKeyOnRefresh && faultKey != null)
                 {
                     // The old key is not disposed, because a concurrent request of the session can still use it.
@@ -122,18 +146,27 @@ namespace WebAppNetCore.OAuth
             string tokenEndpoint,
             DPoPKey dpopKey,
             string htu,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ProofReplay replay = null)
         {
+            // RedeemAsOtherClient and RefreshAsOtherClient authenticate as another client with the credentials of this one.
+            var clientId = fault == Fault.RedeemAsOtherClient || fault == Fault.RefreshAsOtherClient ? configuration.OtherClientId() : null;
             string dpopNonce = null;
             for (var attempt = 1; ; attempt++)
             {
                 // Each attempt has a new client assertion and a new proof, because Identify rejects a replayed jti.
                 var parameters = new Dictionary<string, string>(grantParameters);
                 using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
-                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault);
+                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault, clientId);
                 if (dpopKey != null)
                 {
-                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce));
+                    var proof = replay?.Proof ?? DPoPProofFactory.Create(fault, dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce);
+                    if (replay != null)
+                    {
+                        replay.Proof = proof;
+                    }
+
+                    request.Headers.Add("DPoP", proof);
                 }
                 request.Content = new FormUrlEncodedContent(parameters);
 
@@ -173,6 +206,12 @@ namespace WebAppNetCore.OAuth
 
                 return tokenResponse;
             }
+        }
+
+        /// <summary>The proof that ReplayDPoPProofOnRefresh sends in two requests.</summary>
+        private sealed class ProofReplay
+        {
+            public string Proof { get; set; }
         }
     }
 }

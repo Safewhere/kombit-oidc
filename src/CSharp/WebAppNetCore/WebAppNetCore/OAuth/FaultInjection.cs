@@ -27,13 +27,44 @@ namespace WebAppNetCore.OAuth
         SmallDPoPKey,
         RedeemCodeTwice,
 
+        // Sign-in faults: the pushed request.
+        ParWithoutClientAuthentication,
+        ParRedirectUriExtraPath,
+        ParRedirectUriExtraQuery,
+
+        // Sign-in faults: forged DPoP proofs at the token endpoint.
+        ProofAlgNone,
+        ProofHmac,
+        ProofSignatureOtherKey,
+        ProofWithoutJti,
+
+        // Sign-in faults: forged client assertions, at PAR and at the token endpoint.
+        AssertionAlgNone,
+        AssertionHmacWithClientSecret,
+        AssertionSignedByOtherKey,
+        AssertionExpired,
+        AssertionWithoutExp,
+        AssertionIssuerNotClient,
+
+        // Sign-in faults: the token request of the code.
+        RedeemAsOtherClient,
+        MissingCodeVerifier,
+        TokenRedirectUriMismatch,
+
         // UserInfo faults.
         BearerAtUserInfo,
         MissingAth,
         ReplayDPoPProof,
+        UserInfoProofOtherKey,
+        UserInfoProofWrongHtm,
+        UserInfoProofWrongHtu,
+        UserInfoProofWrongAth,
 
         // Refresh faults.
-        NewDPoPKeyOnRefresh
+        NewDPoPKeyOnRefresh,
+        ReplayDPoPProofOnRefresh,
+        RefreshAsOtherClient,
+        ReuseRotatedRefreshToken
     }
 
     public static class FaultInjection
@@ -44,12 +75,24 @@ namespace WebAppNetCore.OAuth
         public static readonly Fault[] SignInFaults =
         {
             Fault.SkipPar, Fault.ExtraBrowserParameter, Fault.AssertionAudienceArray, Fault.AssertionFutureIat, Fault.ParProofKeyMismatch,
-            Fault.NoDPoPProof, Fault.WrongDPoPKey, Fault.WrongHtu, Fault.SmallDPoPKey, Fault.RedeemCodeTwice
+            Fault.NoDPoPProof, Fault.WrongDPoPKey, Fault.WrongHtu, Fault.SmallDPoPKey, Fault.RedeemCodeTwice,
+            Fault.ParWithoutClientAuthentication, Fault.ParRedirectUriExtraPath, Fault.ParRedirectUriExtraQuery,
+            Fault.ProofAlgNone, Fault.ProofHmac, Fault.ProofSignatureOtherKey, Fault.ProofWithoutJti,
+            Fault.AssertionAlgNone, Fault.AssertionHmacWithClientSecret, Fault.AssertionSignedByOtherKey,
+            Fault.AssertionExpired, Fault.AssertionWithoutExp, Fault.AssertionIssuerNotClient,
+            Fault.RedeemAsOtherClient, Fault.MissingCodeVerifier, Fault.TokenRedirectUriMismatch
         };
 
-        public static readonly Fault[] UserInfoFaults = { Fault.BearerAtUserInfo, Fault.MissingAth, Fault.ReplayDPoPProof };
+        public static readonly Fault[] UserInfoFaults =
+        {
+            Fault.BearerAtUserInfo, Fault.MissingAth, Fault.ReplayDPoPProof,
+            Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth
+        };
 
-        public static readonly Fault[] RefreshFaults = { Fault.NewDPoPKeyOnRefresh };
+        public static readonly Fault[] RefreshFaults =
+        {
+            Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken
+        };
 
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
         {
@@ -66,7 +109,30 @@ namespace WebAppNetCore.OAuth
             [Fault.BearerAtUserInfo] = "The Bearer scheme with a DPoP-bound token. Expected: invalid_token.",
             [Fault.MissingAth] = "A UserInfo proof without ath. Expected: invalid_token.",
             [Fault.ReplayDPoPProof] = "The same UserInfo proof in two calls. Expected: invalid_token for the second call.",
-            [Fault.NewDPoPKeyOnRefresh] = "A new DPoP key for the refresh request. Expected: success, and the new access token has a new cnf.jkt."
+            [Fault.NewDPoPKeyOnRefresh] = "A new DPoP key for the refresh request. Expected: success, and the new access token has a new cnf.jkt.",
+            [Fault.ParWithoutClientAuthentication] = "A pushed request with client_id and no client authentication. Expected: invalid_client.",
+            [Fault.ParRedirectUriExtraPath] = "The registered redirect URI with an extra path segment /x in the pushed request. Expected: invalid_request.",
+            [Fault.ParRedirectUriExtraQuery] = "The registered redirect URI with an extra query ?x=1 in the pushed request. Expected: invalid_request.",
+            [Fault.ProofAlgNone] = "A token proof with alg none and no signature. Expected: invalid_dpop_proof.",
+            [Fault.ProofHmac] = "A token proof with alg HS256, signed with a random key. Expected: invalid_dpop_proof.",
+            [Fault.ProofSignatureOtherKey] = "A token proof with the jwk of the DPoP key, signed with another key. Expected: invalid_dpop_proof.",
+            [Fault.ProofWithoutJti] = "A token proof without jti. Expected: invalid_dpop_proof.",
+            [Fault.AssertionAlgNone] = "Client assertions with alg none and no signature. Expected: invalid_client.",
+            [Fault.AssertionHmacWithClientSecret] = "Client assertions with alg HS256, signed with the client secret (client_secret_jwt). Expected: invalid_client.",
+            [Fault.AssertionSignedByOtherKey] = "Client assertions with the kid of the client key, signed with a key outside the JWKS. Expected: invalid_client.",
+            [Fault.AssertionExpired] = "Client assertions with exp 60 seconds and iat 120 seconds in the past. Expected: invalid_client.",
+            [Fault.AssertionWithoutExp] = "Client assertions without exp. Expected: invalid_client.",
+            [Fault.AssertionIssuerNotClient] = "Client assertions with iss Testing:OtherClientId and the client ID as sub. Expected: invalid_client.",
+            [Fault.RedeemAsOtherClient] = "The token request of the code as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: invalid_grant.",
+            [Fault.MissingCodeVerifier] = "A token request without code_verifier. Expected: invalid_grant (verify).",
+            [Fault.TokenRedirectUriMismatch] = "A token request with redirect_uri /other-callback instead of the redirect URI of the authorization request. Expected: invalid_grant.",
+            [Fault.UserInfoProofOtherKey] = "A valid UserInfo proof of a new key, not the key of the access token. Expected: invalid_token (verify).",
+            [Fault.UserInfoProofWrongHtm] = "A UserInfo proof with htm POST for a GET request. Expected: invalid_token (verify).",
+            [Fault.UserInfoProofWrongHtu] = "A UserInfo proof with the token endpoint as htu. Expected: invalid_token (verify).",
+            [Fault.UserInfoProofWrongAth] = "A UserInfo proof with the ath of another access token value. Expected: invalid_token (verify).",
+            [Fault.ReplayDPoPProofOnRefresh] = "Two refresh requests with the same proof; the result is the second. Expected: invalid_dpop_proof for the second (verify).",
+            [Fault.RefreshAsOtherClient] = "The refresh request as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: invalid_grant.",
+            [Fault.ReuseRotatedRefreshToken] = "A refresh that rotates the refresh token, then a refresh with the old one. Needs a connection that rotates. Expected: invalid_grant for the old one."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

@@ -1,8 +1,10 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
@@ -47,8 +49,10 @@ namespace WebAppNetCore.OAuth
                 // All authorization parameters of the handler: client_id, response_type, redirect_uri, scope, state, nonce, PKCE, and
                 // the parameters that OnRedirectToIdentityProvider added.
                 var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
+                ApplyRedirectUriFault(parameters, fault);
                 using var request = new HttpRequestMessage(HttpMethod.Post, parEndpoint);
-                var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault);
+                // ParWithoutClientAuthentication keeps the client_id of the handler and sends no credentials.
+                var clientAssertion = fault == Fault.ParWithoutClientAuthentication ? null : clientAuthentication.Apply(request, parameters, metadata, fault);
                 if (dpopKey != null)
                 {
                     request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", parEndpoint, nonce: dpopNonce));
@@ -78,6 +82,27 @@ namespace WebAppNetCore.OAuth
                     ProtocolTrace.Detail("expires_in", result.ExpiresIn?.ToString())
                 });
                 return result;
+            }
+        }
+
+        /// <summary>
+        /// A redirect URI that only starts with the registered one. Only the pushed request has it; the token request keeps the
+        /// redirect URI of the handler.
+        /// </summary>
+        private static void ApplyRedirectUriFault(IDictionary<string, string> parameters, Fault fault)
+        {
+            if (!parameters.TryGetValue("redirect_uri", out var redirectUri))
+            {
+                return;
+            }
+
+            if (fault == Fault.ParRedirectUriExtraPath)
+            {
+                parameters["redirect_uri"] = redirectUri.TrimEnd('/') + "/x";
+            }
+            else if (fault == Fault.ParRedirectUriExtraQuery)
+            {
+                parameters["redirect_uri"] = QueryHelpers.AddQueryString(redirectUri, "x", "1");
             }
         }
 

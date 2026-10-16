@@ -231,6 +231,21 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// The client ID of another client, for the faults that authenticate as it or name it as the issuer of an assertion.
+        /// The faults fail with a message when it has no value.
+        /// </summary>
+        public static string OtherClientId(this IConfiguration configuration)
+        {
+            var value = configuration["Testing:OtherClientId"];
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new OAuthClientException("The fault needs the client ID of another client in Testing:OtherClientId.");
+            }
+
+            return value;
+        }
+
+        /// <summary>
         /// Reads every building-block setting once, so that an invalid value stops the application at startup.
         /// </summary>
         public static void ValidateBuildingBlockSettings(this IConfiguration configuration)

@@ -106,6 +106,7 @@ All keys are in the `OpenIdConnectOptions` section, except the last one. The def
 | `DPoP:SigningAlgorithm` | `RS256` to `PS512`; default `PS256` | FAPI 5.4.1 | The `alg` of DPoP proofs. |
 | `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
 | `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
+| `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, and `AssertionIssuerNotClient`. Without a value, these faults fail with a message. |
 
 These capabilities have no setting:
 
@@ -202,6 +203,29 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | `MissingAth` | Call UserInfo | A proof without `ath` | `invalid_token` |
 | `ReplayDPoPProof` | Call UserInfo | The same proof in two calls | `invalid_token` for the second call |
 | `NewDPoPKeyOnRefresh` | Refresh | A new key for the refresh request | Success; the new access token has a new `cnf.jkt` |
+| `ParWithoutClientAuthentication` | Sign in | A pushed request with `client_id` and no client authentication | `invalid_client` |
+| `ParRedirectUriExtraPath` | Sign in | The pushed `redirect_uri` with an extra path segment `/x` | `invalid_request` (RFC 9700 section 2.1: exact matching) |
+| `ParRedirectUriExtraQuery` | Sign in | The pushed `redirect_uri` with an extra query `?x=1` | `invalid_request` |
+| `ProofAlgNone` | Sign in | A token proof with `alg` `none` and no signature | `invalid_dpop_proof` |
+| `ProofHmac` | Sign in | A token proof with `alg` `HS256`, signed with a random key | `invalid_dpop_proof` |
+| `ProofSignatureOtherKey` | Sign in | A token proof with the `jwk` of the DPoP key, signed with another key | `invalid_dpop_proof` |
+| `ProofWithoutJti` | Sign in | A token proof without `jti` | `invalid_dpop_proof` |
+| `AssertionAlgNone` | Sign in | Client assertions with `alg` `none` and no signature | `invalid_client` at the first endpoint, PAR when it is on |
+| `AssertionHmacWithClientSecret` | Sign in | Client assertions with `alg` `HS256`, signed with the client secret (`client_secret_jwt`) | `invalid_client` |
+| `AssertionSignedByOtherKey` | Sign in | Client assertions with the `kid` of the client key, signed with a key outside the JWKS | `invalid_client` |
+| `AssertionExpired` | Sign in | Client assertions with `exp` 60 seconds and `iat` 120 seconds in the past | `invalid_client` |
+| `AssertionWithoutExp` | Sign in | Client assertions without `exp` | `invalid_client` |
+| `AssertionIssuerNotClient` | Sign in | Client assertions with `iss` from `Testing:OtherClientId`; `sub` and `client_id` unchanged | `invalid_client` |
+| `RedeemAsOtherClient` | Sign in | The token request of the code as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | `invalid_grant`: the code belongs to another client |
+| `MissingCodeVerifier` | Sign in | A token request without `code_verifier` | `invalid_grant` (verify) |
+| `TokenRedirectUriMismatch` | Sign in | A token request with `redirect_uri` `/other-callback` on the same origin | `invalid_grant` |
+| `UserInfoProofOtherKey` | Call UserInfo | A valid proof of a new key, not the key of the access token | `invalid_token` (verify) |
+| `UserInfoProofWrongHtm` | Call UserInfo | A proof with `htm` `POST` | `invalid_token` (verify) |
+| `UserInfoProofWrongHtu` | Call UserInfo | A proof with the token endpoint as `htu` | `invalid_token` (verify) |
+| `UserInfoProofWrongAth` | Call UserInfo | A proof with the `ath` of another access token value | `invalid_token` (verify) |
+| `ReplayDPoPProofOnRefresh` | Refresh | Two refresh requests with the same proof; the result is the second | `invalid_dpop_proof` for the second (verify) |
+| `RefreshAsOtherClient` | Refresh | The refresh request as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | `invalid_grant`: the refresh token belongs to another client |
+| `ReuseRotatedRefreshToken` | Refresh | A refresh that rotates the refresh token, then a refresh with the old one. The sample keeps the new refresh token. Needs a connection that rotates | `invalid_grant` for the old refresh token |
 
 ## Live checklist
 

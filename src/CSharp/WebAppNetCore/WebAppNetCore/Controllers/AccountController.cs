@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography.X509Certificates;
 using System.Globalization;
@@ -123,37 +124,18 @@ namespace WebAppNetCore.Controllers
                 return RedirectToAction(nameof(HomeController.Index), "Home");
             }
 
+            var session = sessionStore.Get(result.Properties);
+            var refreshFault = FaultInjection.Parse(fault, configuration, FaultInjection.RefreshFaults);
             try
             {
-                var response = await tokenClient.RefreshAsync(
-                    refreshToken,
-                    sessionStore.Get(result.Properties),
-                    FaultInjection.Parse(fault, configuration, FaultInjection.RefreshFaults),
-                    HttpContext.RequestAborted);
-
-                // The sample keeps the ID token of the sign-in, which the handler validated.
-                var tokens = result.Properties.GetTokens().ToDictionary(t => t.Name, t => t.Value);
-                tokens[OpenIdConnectConstants.AccessToken] = response.AccessToken;
-                if (!string.IsNullOrEmpty(response.TokenType))
+                if (refreshFault == Fault.ReuseRotatedRefreshToken)
                 {
-                    tokens["token_type"] = response.TokenType;
+                    TempData[ProtocolViewModel.ResultKey] = await RefreshThenReuseOldTokenAsync(tokenClient, result, refreshToken, session);
+                    return RedirectToAction(nameof(HomeController.Index), "Home");
                 }
 
-                // FAPI 2.0 asks for no routine rotation (section 5.3.2.1 item 9). When Identify returns a refresh token anyway, it
-                // replaces the old one (section 5.3.3.1 item 6).
-                var rotated = !string.IsNullOrEmpty(response.RefreshToken) && response.RefreshToken != refreshToken;
-                if (rotated)
-                {
-                    tokens["refresh_token"] = response.RefreshToken;
-                }
-
-                if (int.TryParse(response.ExpiresIn, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expiresIn))
-                {
-                    tokens["expires_at"] = DateTimeOffset.UtcNow.AddSeconds(expiresIn).ToString("o", CultureInfo.InvariantCulture);
-                }
-
-                result.Properties.StoreTokens(tokens.Select(t => new AuthenticationToken { Name = t.Key, Value = t.Value }));
-                await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal, result.Properties);
+                var response = await tokenClient.RefreshAsync(refreshToken, session, refreshFault, HttpContext.RequestAborted);
+                var rotated = await StoreRefreshedTokensAsync(result, response, refreshToken);
                 TempData[ProtocolViewModel.ResultKey] = rotated
                     ? "The refresh succeeded. Identify returned a new refresh token, and the sample stored it."
                     : "The refresh succeeded. The refresh token is unchanged.";
@@ -164,6 +146,55 @@ namespace WebAppNetCore.Controllers
             }
 
             return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        /// <summary>
+        /// The fault ReuseRotatedRefreshToken: a refresh that rotates the refresh token, whose tokens the sample stores, and then a
+        /// refresh with the old refresh token. An error of the second refresh is the result, and the next refresh uses the new token.
+        /// </summary>
+        private async Task<string> RefreshThenReuseOldTokenAsync(TokenClient tokenClient, AuthenticateResult result, string refreshToken, ClientSession session)
+        {
+            var response = await tokenClient.RefreshAsync(refreshToken, session, Fault.None, HttpContext.RequestAborted);
+            if (!await StoreRefreshedTokensAsync(result, response, refreshToken))
+            {
+                return "ReuseRotatedRefreshToken: the refresh succeeded, but Identify returned no new refresh token, so there is no old one to send. " +
+                    "The connection must issue a new refresh token for every exchange.";
+            }
+
+            session?.Trace.Add("Fault injection", "ReuseRotatedRefreshToken: the next refresh request sends the old refresh token");
+            await tokenClient.RefreshAsync(refreshToken, session, Fault.None, HttpContext.RequestAborted);
+            return "ReuseRotatedRefreshToken: Identify accepted the old refresh token. The sample keeps the tokens of the first refresh.";
+        }
+
+        /// <summary>
+        /// Stores the tokens of a refresh response in the session cookie. Returns true when Identify returned a new refresh token.
+        /// </summary>
+        private async Task<bool> StoreRefreshedTokensAsync(AuthenticateResult result, OpenIdConnectMessage response, string refreshToken)
+        {
+            // The sample keeps the ID token of the sign-in, which the handler validated.
+            var tokens = result.Properties.GetTokens().ToDictionary(t => t.Name, t => t.Value);
+            tokens[OpenIdConnectConstants.AccessToken] = response.AccessToken;
+            if (!string.IsNullOrEmpty(response.TokenType))
+            {
+                tokens["token_type"] = response.TokenType;
+            }
+
+            // FAPI 2.0 asks for no routine rotation (section 5.3.2.1 item 9). When Identify returns a refresh token anyway, it
+            // replaces the old one (section 5.3.3.1 item 6).
+            var rotated = !string.IsNullOrEmpty(response.RefreshToken) && response.RefreshToken != refreshToken;
+            if (rotated)
+            {
+                tokens["refresh_token"] = response.RefreshToken;
+            }
+
+            if (int.TryParse(response.ExpiresIn, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expiresIn))
+            {
+                tokens["expires_at"] = DateTimeOffset.UtcNow.AddSeconds(expiresIn).ToString("o", CultureInfo.InvariantCulture);
+            }
+
+            result.Properties.StoreTokens(tokens.Select(t => new AuthenticationToken { Name = t.Key, Value = t.Value }));
+            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal, result.Properties);
+            return rotated;
         }
 
         // GET: /Account/SignOut
