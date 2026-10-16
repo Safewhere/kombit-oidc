@@ -105,6 +105,8 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
               "token_endpoint": "{{StubIdentify.TokenEndpoint}}",
               "userinfo_endpoint": "{{StubIdentify.UserInfoEndpoint}}",
               "end_session_endpoint": "{{StubIdentify.EndSessionEndpoint}}",
+              "introspection_endpoint": "{{StubIdentify.IntrospectionEndpoint}}",
+              "revocation_endpoint": "{{StubIdentify.RevocationEndpoint}}",
               "jwks_uri": "{{ProviderIssuer}}/certs.idp"
             }
             """);

@@ -22,6 +22,8 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal const string TokenEndpoint = Issuer + "/token.idp";
     internal const string ParEndpoint = Issuer + "/par.idp";
     internal const string UserInfoEndpoint = Domain + "/runtime/openidconnect/userinfo.idp";
+    internal const string IntrospectionEndpoint = Issuer + "/introspect.idp";
+    internal const string RevocationEndpoint = Issuer + "/revoke.idp";
     internal const string EndSessionEndpoint = Domain + "/runtime/openidconnect/logout.idp";
     internal const string RequestUri = "urn:ietf:params:oauth:request_uri:stub-request";
     internal const string Subject = "user-1";
@@ -63,6 +65,8 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal Func<RecordedRequest, HttpResponseMessage>? TokenResponder { get; set; }
 
     internal Func<RecordedRequest, HttpResponseMessage>? UserInfoResponder { get; set; }
+
+    internal Func<RecordedRequest, HttpResponseMessage>? IntrospectionResponder { get; set; }
 
     internal IReadOnlyList<RecordedRequest> Requests
     {
@@ -135,6 +139,8 @@ internal sealed class StubIdentify : HttpMessageHandler
             ParEndpoint => (ParResponder ?? DefaultParResponse)(recorded),
             TokenEndpoint => (TokenResponder ?? DefaultTokenResponse)(recorded),
             UserInfoEndpoint => (UserInfoResponder ?? DefaultUserInfoResponse)(recorded),
+            IntrospectionEndpoint => (IntrospectionResponder ?? DefaultIntrospectionResponse)(recorded),
+            RevocationEndpoint => new HttpResponseMessage(HttpStatusCode.OK),
             _ => throw new InvalidOperationException($"Unexpected request to the stub Identify: {request.Method} {request.RequestUri}")
         };
     }
@@ -176,6 +182,11 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal HttpResponseMessage DefaultUserInfoResponse(RecordedRequest request)
     {
         return Json(HttpStatusCode.OK, new Dictionary<string, object> { ["sub"] = Subject, ["email"] = "user@provider.test" });
+    }
+
+    internal HttpResponseMessage DefaultIntrospectionResponse(RecordedRequest request)
+    {
+        return Json(HttpStatusCode.OK, new Dictionary<string, object> { ["active"] = true, ["token_type"] = "DPoP", ["client_id"] = ClientId });
     }
 
     internal string IssueToken(Dictionary<string, object> claims)

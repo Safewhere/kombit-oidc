@@ -105,6 +105,86 @@ namespace WebAppNetCore.Controllers
             return RedirectToAction(nameof(HomeController.Index), "Home");
         }
 
+        // POST: /Account/Introspect
+        // Introspects the access token of the session (RFC 7662) and shows the response.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Introspect([FromServices] TokenManagementClient tokenManagementClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            try
+            {
+                var introspection = await tokenManagementClient.IntrospectAsync(
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
+                    sessionStore.Get(result.Properties),
+                    FaultInjection.Parse(fault, configuration, FaultInjection.IntrospectionFaults),
+                    HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = "The introspection succeeded: " + introspection.Replace("\r", string.Empty).Replace("\n", " ");
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/Revoke
+        // Revokes the access token of the session (RFC 7009). The session keeps the token, so UserInfo shows the revocation.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Revoke([FromServices] TokenManagementClient tokenManagementClient, [FromServices] ClientSessionStore sessionStore)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            try
+            {
+                await tokenManagementClient.RevokeAsync(
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken), sessionStore.Get(result.Properties), HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = "The revocation succeeded. The session keeps the revoked access token.";
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/ClientCredentials
+        // Gets a token with the client credentials grant, without a sign-in. With DPoP:BindAccessTokens, the request has a proof of a new key.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ClientCredentials([FromServices] TokenClient tokenClient)
+        {
+            using var dpopKey = configuration.DPoPBindAccessTokens() ? DPoPKey.Create() : null;
+            try
+            {
+                var response = await tokenClient.ClientCredentialsAsync(dpopKey, HttpContext.RequestAborted);
+                var jkt = AccessTokenInspector.ReadConfirmationThumbprint(response.AccessToken);
+                var bound = dpopKey != null && jkt == dpopKey.Thumbprint;
+                TempData[ProtocolViewModel.ResultKey] = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "The client credentials request succeeded: token_type {0}, expires_in {1}, scope {2}, cnf.jkt {3}, Bound to the key: {4}.",
+                    response.TokenType, response.ExpiresIn ?? "(none)", string.IsNullOrEmpty(response.Scope) ? "(none)" : response.Scope, jkt ?? "(none)", bound ? "Yes" : "No");
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
         // POST: /Account/Refresh
         // Uses the refresh token with the DPoP key of the sign-in, and stores the new access token in the session.
         [HttpPost]

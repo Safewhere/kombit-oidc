@@ -40,6 +40,7 @@ namespace WebAppNetCore
             services.AddSingleton<TokenClient>();
             services.AddSingleton<UserInfoClient>();
             services.AddSingleton<PushedAuthorizationClient>();
+            services.AddSingleton<TokenManagementClient>();
             services.AddMemoryCache();
             services.AddSingleton<ClientSessionStore>();
 
@@ -221,6 +222,14 @@ namespace WebAppNetCore
                     var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
                     var fault = session?.SignInFault ?? Fault.None;
                     var tokenClient = services.GetRequiredService<TokenClient>();
+                    if (fault == Fault.RedeemCodeAfter10Seconds || fault == Fault.RedeemCodeAfter5Seconds)
+                    {
+                        // Lets the code age before the redemption, for the tests of the code lifetime.
+                        var delay = fault == Fault.RedeemCodeAfter10Seconds ? 10 : 5;
+                        session?.Trace.Add("Fault injection", fault + ": the sample waits " + delay + " seconds before it redeems the code");
+                        await Task.Delay(TimeSpan.FromSeconds(delay), context.HttpContext.RequestAborted);
+                    }
+
                     var tokenResponse = await tokenClient.RedeemCodeAsync(
                         context.ProtocolMessage.Code,
                         context.Properties.Items[OpenIdConnectDefaults.RedirectUriForCodePropertiesKey],

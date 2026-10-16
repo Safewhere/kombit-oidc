@@ -50,14 +50,17 @@ namespace WebAppNetCore.OAuth
                 // the parameters that OnRedirectToIdentityProvider added.
                 var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
                 ApplyRedirectUriFault(parameters, fault);
+                var repeated = ApplyParameterFaults(parameters, fault);
                 using var request = new HttpRequestMessage(HttpMethod.Post, parEndpoint);
                 // ParWithoutClientAuthentication keeps the client_id of the handler and sends no credentials.
                 var clientAssertion = fault == Fault.ParWithoutClientAuthentication ? null : clientAuthentication.Apply(request, parameters, metadata, fault);
                 if (dpopKey != null)
                 {
-                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", parEndpoint, nonce: dpopNonce));
+                    // ParProofTokenEndpointHtu works with DPoP:SendProofToParEndpoint, which gives the PAR request a proof.
+                    var htu = fault == Fault.ParProofTokenEndpointHtu ? IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint") : parEndpoint;
+                    request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce));
                 }
-                request.Content = new FormUrlEncodedContent(parameters);
+                request.Content = new FormUrlEncodedContent(parameters.Concat(repeated));
 
                 using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
                 if (!response.IsSuccessStatusCode)
@@ -104,6 +107,50 @@ namespace WebAppNetCore.OAuth
             {
                 parameters["redirect_uri"] = QueryHelpers.AddQueryString(redirectUri, "x", "1");
             }
+        }
+
+        /// <summary>
+        /// The faults of the pushed request parameters. Returns the parameters that the request has a second time
+        /// (ParRepeatedParameter); the form dictionary cannot hold them.
+        /// </summary>
+        private static List<KeyValuePair<string, string>> ApplyParameterFaults(IDictionary<string, string> parameters, Fault fault)
+        {
+            var repeated = new List<KeyValuePair<string, string>>();
+            switch (fault)
+            {
+                case Fault.ParMissingCodeChallenge:
+                    parameters.Remove("code_challenge");
+                    break;
+                case Fault.ParMissingCodeChallengeMethod:
+                    parameters.Remove("code_challenge_method");
+                    break;
+                case Fault.ParPlainPkce:
+                    parameters["code_challenge_method"] = "plain";
+                    break;
+                case Fault.ParMissingRedirectUri:
+                    parameters.Remove("redirect_uri");
+                    break;
+                case Fault.ParRepeatedParameter:
+                    repeated.Add(new KeyValuePair<string, string>("scope", parameters.TryGetValue("scope", out var scope) ? scope : "openid"));
+                    break;
+                case Fault.ParRequestParameter:
+                    // An unsigned request object with the same parameters. Identify does not support request objects in PAR.
+                    parameters["request"] = FaultJwt.Unsigned(
+                        new Dictionary<string, object> { ["typ"] = "oauth-authz-req+jwt" },
+                        parameters.Where(p => p.Key != "client_assertion" && p.Key != "client_assertion_type").ToDictionary(p => p.Key, p => (object)p.Value));
+                    break;
+                case Fault.ParNestedRequestUri:
+                    parameters["request_uri"] = "urn:ietf:params:oauth:request_uri:nested-in-the-pushed-request";
+                    break;
+                case Fault.UnknownResponseTypeComponent:
+                    parameters["response_type"] = "code unknown";
+                    break;
+                case Fault.ResponseTypeWithToken:
+                    parameters["response_type"] = "code token";
+                    break;
+            }
+
+            return repeated;
         }
 
         private static async Task<PushedAuthorizationResult> ReadResultAsync(HttpResponseMessage response, CancellationToken cancellationToken)

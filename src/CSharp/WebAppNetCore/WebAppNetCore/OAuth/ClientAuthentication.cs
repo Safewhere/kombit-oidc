@@ -47,11 +47,22 @@ namespace WebAppNetCore.OAuth
                     request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
                     return null;
 
+                case "none":
+                    // A public client (RFC 6749 section 2.1): only client_id, no credentials.
+                    parameters["client_id"] = clientId;
+                    return null;
+
                 default: // private_key_jwt
                     var clientAssertion = CreateClientAssertion(metadata, fault, clientId);
                     parameters["client_assertion_type"] = ClientAssertionType;
                     parameters["client_assertion"] = clientAssertion;
-                    parameters["client_id"] = clientId;
+                    // ClientIdNotSubject: the form client_id names another client than the assertion.
+                    parameters["client_id"] = fault == Fault.ClientIdNotSubject ? configuration.OtherClientId() : clientId;
+                    if (fault == Fault.AssertionAndClientSecret)
+                    {
+                        parameters["client_secret"] = configuration.ClientSecret();
+                    }
+
                     return clientAssertion;
             }
         }
@@ -99,6 +110,10 @@ namespace WebAppNetCore.OAuth
 
                 case Fault.AssertionWithoutExp:
                     claims.Remove("exp");
+                    break;
+
+                case Fault.AssertionWithoutJti:
+                    claims.Remove("jti");
                     break;
             }
 

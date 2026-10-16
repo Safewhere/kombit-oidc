@@ -58,7 +58,7 @@ The sign-in buttons post a form with an antiforgery token to /Account/SignIn, so
 
 ## Support configurable Token Authentication method
 
-- Edit "appsettings.json" and change the setting TokenAuthnMethod to "client_secret_post", "client_secret_basic", or "private_key_jwt". 
+- Edit "appsettings.json" and change the setting TokenAuthnMethod to "client_secret_post", "client_secret_basic", "private_key_jwt", or "none" (a public client: only client_id). 
 
 The same method applies at the PAR endpoint.
 
@@ -106,7 +106,7 @@ All keys are in the `OpenIdConnectOptions` section, except the last one. The def
 | `DPoP:SigningAlgorithm` | `RS256` to `PS512`; default `PS256` | FAPI 5.4.1 | The `alg` of DPoP proofs. |
 | `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
 | `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
-| `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, and `AssertionIssuerNotClient`. Without a value, these faults fail with a message. |
+| `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, `AssertionIssuerNotClient`, and `ClientIdNotSubject`. Without a value, these faults fail with a message. |
 
 These capabilities have no setting:
 
@@ -226,6 +226,38 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | `ReplayDPoPProofOnRefresh` | Refresh | Two refresh requests with the same proof; the result is the second | `invalid_dpop_proof` for the second (verify) |
 | `RefreshAsOtherClient` | Refresh | The refresh request as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | `invalid_grant`: the refresh token belongs to another client |
 | `ReuseRotatedRefreshToken` | Refresh | A refresh that rotates the refresh token, then a refresh with the old one. The sample keeps the new refresh token. Needs a connection that rotates | `invalid_grant` for the old refresh token |
+| `ParMissingCodeChallenge` | Sign in | A pushed request without `code_challenge` | `invalid_request` |
+| `ParMissingCodeChallengeMethod` | Sign in | A pushed request without `code_challenge_method` | `invalid_request` |
+| `ParPlainPkce` | Sign in | A pushed request with `code_challenge_method` `plain` | `invalid_request` |
+| `ParMissingRedirectUri` | Sign in | A pushed request without `redirect_uri` | `invalid_request` |
+| `ParRepeatedParameter` | Sign in | A pushed request with `scope` twice | `invalid_request` |
+| `ParRequestParameter` | Sign in | A pushed request with a `request` parameter (an unsigned request object) | `invalid_request` |
+| `ParNestedRequestUri` | Sign in | A pushed request with a `request_uri` parameter | `invalid_request` |
+| `UnknownResponseTypeComponent` | Sign in | A pushed request with `response_type` `code unknown` | `unsupported_response_type` |
+| `ResponseTypeWithToken` | Sign in | A pushed request with `response_type` `code token` | An error (verify) |
+| `ParProofTokenEndpointHtu` | Sign in | A PAR proof with the token endpoint as `htu`. Needs `DPoP:SendProofToParEndpoint=true` | `invalid_dpop_proof` |
+| `ProofWrongHtm` | Sign in | A token proof with `htm` `GET` | `invalid_dpop_proof` |
+| `ProofHtuPathCase` | Sign in | A token proof with the `htu` path in upper case | `invalid_dpop_proof` |
+| `ProofIatFuture` | Sign in | A token proof with `iat` 120 seconds in the future | `invalid_dpop_proof` |
+| `ProofIatOld` | Sign in | A token proof with `iat` 90 seconds in the past | `invalid_dpop_proof` |
+| `ProofTypJwt` | Sign in | A token proof with `typ` `JWT` | `invalid_dpop_proof` |
+| `ProofPrivateJwkMembers` | Sign in | A token proof whose `jwk` has the private members | `invalid_dpop_proof` |
+| `TwoProofs` | Sign in | A token request with two `DPoP` headers | `invalid_dpop_proof` |
+| `ProofHtuWithQuery` | Sign in | A token proof with a query in `htu` | Success after normalization |
+| `ProofHtuHostUpperCase` | Sign in | A token proof with the `htu` host in upper case | Success after normalization |
+| `ProofIatRecent` | Sign in | A token proof with `iat` 30 seconds in the past | Success |
+| `ProofNbfFuture` | Sign in | A token proof with `nbf` 120 seconds in the future | `invalid_dpop_proof` with a build that checks `nbf` |
+| `WrongDPoPKeyThenRetry` | Sign in | A token request with a new key, then with the key of the sign-in | `invalid_grant`, then success: the wrong key does not consume the code |
+| `AssertionWithoutJti` | Sign in | Client assertions without `jti` | `invalid_client` |
+| `AssertionAndClientSecret` | Sign in | Client assertions and `client_secret` in the same request | `invalid_client` |
+| `ClientIdNotSubject` | Sign in | The form `client_id` from `Testing:OtherClientId`, with an assertion of this client | `invalid_client` |
+| `WrongCodeVerifier` | Sign in | A token request with another `code_verifier` | `invalid_grant` |
+| `RedeemCodeAfter10Seconds`, `RedeemCodeAfter5Seconds` | Sign in | The sample waits before it redeems the code | `invalid_grant` when the code lifetime is shorter; success otherwise |
+| `IntrospectWithClientSecret` | Introspect | The introspection request with `client_secret_post` instead of the configured method | `invalid_client` |
+| `NoDPoPProof` | Refresh | No proof in the refresh request | `invalid_dpop_proof` when DPoP is required |
+| `ReplayClientAssertion` | Refresh | Two refresh requests with the same client assertion; the result is the second | `invalid_client` for the second |
+
+Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 
 ## Live checklist
 

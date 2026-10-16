@@ -44,6 +44,20 @@ namespace WebAppNetCore.OAuth
         public int KeySizeInBits => rsa.KeySize;
 
         /// <summary>
+        /// The jwk with the private members, for the fault ProofPrivateJwkMembers only. A correct proof never carries it.
+        /// </summary>
+        public IReadOnlyDictionary<string, object> PrivateJwkForFault()
+        {
+            var p = rsa.ExportParameters(includePrivateParameters: true);
+            return new Dictionary<string, object>
+            {
+                ["kty"] = "RSA", ["n"] = Base64UrlEncoder.Encode(p.Modulus), ["e"] = Base64UrlEncoder.Encode(p.Exponent),
+                ["d"] = Base64UrlEncoder.Encode(p.D), ["p"] = Base64UrlEncoder.Encode(p.P), ["q"] = Base64UrlEncoder.Encode(p.Q),
+                ["dp"] = Base64UrlEncoder.Encode(p.DP), ["dq"] = Base64UrlEncoder.Encode(p.DQ), ["qi"] = Base64UrlEncoder.Encode(p.InverseQ)
+            };
+        }
+
+        /// <summary>
         /// Computes the RFC 7638 thumbprint of an RSA key: the SHA-256 hash of the required members in lexicographic order, without whitespace.
         /// </summary>
         public static string ComputeThumbprint(string n, string e)

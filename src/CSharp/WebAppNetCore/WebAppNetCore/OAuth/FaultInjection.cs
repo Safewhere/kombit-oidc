@@ -51,6 +51,46 @@ namespace WebAppNetCore.OAuth
         MissingCodeVerifier,
         TokenRedirectUriMismatch,
 
+        // Sign-in faults: more of the pushed request.
+        ParMissingCodeChallenge,
+        ParMissingCodeChallengeMethod,
+        ParPlainPkce,
+        ParMissingRedirectUri,
+        ParRepeatedParameter,
+        ParRequestParameter,
+        ParNestedRequestUri,
+        UnknownResponseTypeComponent,
+        ResponseTypeWithToken,
+        ParProofTokenEndpointHtu,
+
+        // Sign-in faults: more DPoP proofs at the token endpoint.
+        ProofWrongHtm,
+        ProofHtuPathCase,
+        ProofIatFuture,
+        ProofIatOld,
+        ProofTypJwt,
+        ProofPrivateJwkMembers,
+        TwoProofs,
+        ProofHtuWithQuery,
+        ProofHtuHostUpperCase,
+        ProofIatRecent,
+        ProofNbfFuture,
+        WrongDPoPKeyThenRetry,
+
+        // Sign-in faults: more client assertions and the token request of the code.
+        AssertionWithoutJti,
+        AssertionAndClientSecret,
+        ClientIdNotSubject,
+        WrongCodeVerifier,
+        RedeemCodeAfter10Seconds,
+        RedeemCodeAfter5Seconds,
+
+        // Introspection faults.
+        IntrospectWithClientSecret,
+
+        // Refresh faults that also exist as sign-in faults: NoDPoPProof.
+        ReplayClientAssertion,
+
         // UserInfo faults.
         BearerAtUserInfo,
         MissingAth,
@@ -80,8 +120,17 @@ namespace WebAppNetCore.OAuth
             Fault.ProofAlgNone, Fault.ProofHmac, Fault.ProofSignatureOtherKey, Fault.ProofWithoutJti,
             Fault.AssertionAlgNone, Fault.AssertionHmacWithClientSecret, Fault.AssertionSignedByOtherKey,
             Fault.AssertionExpired, Fault.AssertionWithoutExp, Fault.AssertionIssuerNotClient,
-            Fault.RedeemAsOtherClient, Fault.MissingCodeVerifier, Fault.TokenRedirectUriMismatch
+            Fault.RedeemAsOtherClient, Fault.MissingCodeVerifier, Fault.TokenRedirectUriMismatch,
+            Fault.ParMissingCodeChallenge, Fault.ParMissingCodeChallengeMethod, Fault.ParPlainPkce, Fault.ParMissingRedirectUri,
+            Fault.ParRepeatedParameter, Fault.ParRequestParameter, Fault.ParNestedRequestUri, Fault.UnknownResponseTypeComponent,
+            Fault.ResponseTypeWithToken, Fault.ParProofTokenEndpointHtu,
+            Fault.ProofWrongHtm, Fault.ProofHtuPathCase, Fault.ProofIatFuture, Fault.ProofIatOld, Fault.ProofTypJwt, Fault.ProofPrivateJwkMembers,
+            Fault.TwoProofs, Fault.ProofHtuWithQuery, Fault.ProofHtuHostUpperCase, Fault.ProofIatRecent, Fault.ProofNbfFuture, Fault.WrongDPoPKeyThenRetry,
+            Fault.AssertionWithoutJti, Fault.AssertionAndClientSecret, Fault.ClientIdNotSubject, Fault.WrongCodeVerifier,
+            Fault.RedeemCodeAfter10Seconds, Fault.RedeemCodeAfter5Seconds
         };
+
+        public static readonly Fault[] IntrospectionFaults = { Fault.IntrospectWithClientSecret };
 
         public static readonly Fault[] UserInfoFaults =
         {
@@ -91,7 +140,8 @@ namespace WebAppNetCore.OAuth
 
         public static readonly Fault[] RefreshFaults =
         {
-            Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken
+            Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken,
+            Fault.NoDPoPProof, Fault.ReplayClientAssertion
         };
 
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
@@ -132,6 +182,36 @@ namespace WebAppNetCore.OAuth
             [Fault.UserInfoProofWrongAth] = "A UserInfo proof with the ath of another access token value. Expected: invalid_token (verify).",
             [Fault.ReplayDPoPProofOnRefresh] = "Two refresh requests with the same proof; the result is the second. Expected: invalid_dpop_proof for the second (verify).",
             [Fault.RefreshAsOtherClient] = "The refresh request as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: invalid_grant.",
+            [Fault.ParMissingCodeChallenge] = "A pushed request without code_challenge. Expected: invalid_request.",
+            [Fault.ParMissingCodeChallengeMethod] = "A pushed request without code_challenge_method. Expected: invalid_request.",
+            [Fault.ParPlainPkce] = "A pushed request with code_challenge_method plain. Expected: invalid_request.",
+            [Fault.ParMissingRedirectUri] = "A pushed request without redirect_uri. Expected: invalid_request.",
+            [Fault.ParRepeatedParameter] = "A pushed request with the scope parameter twice. Expected: invalid_request.",
+            [Fault.ParRequestParameter] = "A pushed request with a request parameter (an unsigned request object). Expected: invalid_request.",
+            [Fault.ParNestedRequestUri] = "A pushed request with a request_uri parameter. Expected: invalid_request.",
+            [Fault.UnknownResponseTypeComponent] = "A pushed request with response_type \"code unknown\". Expected: unsupported_response_type.",
+            [Fault.ResponseTypeWithToken] = "A pushed request with response_type \"code token\". Expected: an error (verify: unauthorized_client or unsupported_response_type).",
+            [Fault.ParProofTokenEndpointHtu] = "A PAR proof with the token endpoint as htu. Expected: invalid_dpop_proof.",
+            [Fault.ProofWrongHtm] = "A token proof with htm GET for the POST request. Expected: invalid_dpop_proof.",
+            [Fault.ProofHtuPathCase] = "A token proof with the htu path in upper case. Expected: invalid_dpop_proof.",
+            [Fault.ProofIatFuture] = "A token proof with iat 120 seconds in the future. Expected: invalid_dpop_proof.",
+            [Fault.ProofIatOld] = "A token proof with iat 90 seconds in the past. Expected: invalid_dpop_proof.",
+            [Fault.ProofTypJwt] = "A token proof with typ JWT instead of dpop+jwt. Expected: invalid_dpop_proof.",
+            [Fault.ProofPrivateJwkMembers] = "A token proof whose jwk header has the private key members. Expected: invalid_dpop_proof.",
+            [Fault.TwoProofs] = "A token request with two DPoP headers. Expected: invalid_dpop_proof.",
+            [Fault.ProofHtuWithQuery] = "A token proof with a query in htu. Expected: success after normalization.",
+            [Fault.ProofHtuHostUpperCase] = "A token proof with the htu host in upper case. Expected: success after normalization.",
+            [Fault.ProofIatRecent] = "A token proof with iat 30 seconds in the past. Expected: success.",
+            [Fault.ProofNbfFuture] = "A token proof with nbf 120 seconds in the future. Expected: invalid_dpop_proof (requires a build with the nbf check).",
+            [Fault.WrongDPoPKeyThenRetry] = "A token request with a new key, then one with the key of the sign-in. Expected: invalid_grant, then success.",
+            [Fault.AssertionWithoutJti] = "Client assertions without jti. Expected: invalid_client.",
+            [Fault.AssertionAndClientSecret] = "Client assertions together with client_secret in the same request. Expected: invalid_client.",
+            [Fault.ClientIdNotSubject] = "The form client_id Testing:OtherClientId with an assertion of this client. Expected: invalid_client.",
+            [Fault.WrongCodeVerifier] = "A token request with another code_verifier. Expected: invalid_grant.",
+            [Fault.RedeemCodeAfter10Seconds] = "The sample waits 10 seconds before it redeems the code. Expected: invalid_grant when the code lifetime is shorter.",
+            [Fault.RedeemCodeAfter5Seconds] = "The sample waits 5 seconds before it redeems the code. Expected: success when the code lifetime is longer.",
+            [Fault.IntrospectWithClientSecret] = "The introspection request with client_secret_post instead of the configured method. Expected: invalid_client.",
+            [Fault.ReplayClientAssertion] = "Two refresh requests with the same client assertion; the result is the second. Expected: invalid_client for the second.",
             [Fault.ReuseRotatedRefreshToken] = "A refresh that rotates the refresh token, then a refresh with the old one. Needs a connection that rotates. Expected: invalid_grant for the old one."
         };
 

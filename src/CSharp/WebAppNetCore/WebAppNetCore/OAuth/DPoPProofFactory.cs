@@ -48,10 +48,45 @@ namespace WebAppNetCore.OAuth
                     claims.Remove("jti");
                     return Sign(key.SecurityKey, key, algorithm, claims);
 
+                case Fault.ProofWrongHtm:
+                    claims["htm"] = httpMethod == "POST" ? "GET" : "POST";
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                case Fault.ProofHtuPathCase:
+                    claims["htu"] = ChangeUri(httpUri, uri => uri.GetLeftPart(UriPartial.Authority) + uri.AbsolutePath.ToUpperInvariant());
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                case Fault.ProofHtuWithQuery:
+                    claims["htu"] = HttpUri(httpUri) + "?x=1";
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                case Fault.ProofHtuHostUpperCase:
+                    claims["htu"] = ChangeUri(httpUri, uri => uri.Scheme + "://" + uri.Authority.ToUpperInvariant() + uri.AbsolutePath);
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                case Fault.ProofIatFuture:
+                case Fault.ProofIatOld:
+                case Fault.ProofIatRecent:
+                    var seconds = fault == Fault.ProofIatFuture ? 120 : fault == Fault.ProofIatOld ? -90 : -30;
+                    claims["iat"] = DateTimeOffset.UtcNow.AddSeconds(seconds).ToUnixTimeSeconds();
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                case Fault.ProofNbfFuture:
+                    claims["nbf"] = DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds();
+                    return Sign(key.SecurityKey, key, algorithm, claims);
+
+                case Fault.ProofTypJwt:
+                    return Sign(key.SecurityKey, key.PublicJwk, algorithm, claims, "JWT");
+
+                case Fault.ProofPrivateJwkMembers:
+                    return Sign(key.SecurityKey, key.PrivateJwkForFault(), algorithm, claims, ProofType);
+
                 default:
                     return Sign(key.SecurityKey, key, algorithm, claims);
             }
         }
+
+        private static string ChangeUri(string uri, Func<Uri, string> change) => change(new Uri(uri));
 
         private static Dictionary<string, object> Claims(string httpMethod, string httpUri, string accessToken, string nonce)
         {
@@ -83,12 +118,17 @@ namespace WebAppNetCore.OAuth
         /// <summary>Signs the claims with the signing key; the jwk header is the public key of headerKey.</summary>
         private static string Sign(SecurityKey signingKey, DPoPKey headerKey, string algorithm, Dictionary<string, object> claims)
         {
+            return Sign(signingKey, headerKey.PublicJwk, algorithm, claims, ProofType);
+        }
+
+        private static string Sign(SecurityKey signingKey, IReadOnlyDictionary<string, object> jwk, string algorithm, Dictionary<string, object> claims, string type)
+        {
             var descriptor = new SecurityTokenDescriptor
             {
-                TokenType = ProofType,
+                TokenType = type,
                 Claims = claims,
                 SigningCredentials = new SigningCredentials(signingKey, algorithm),
-                AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = headerKey.PublicJwk },
+                AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = jwk },
                 IncludeKeyIdInHeader = false
             };
 

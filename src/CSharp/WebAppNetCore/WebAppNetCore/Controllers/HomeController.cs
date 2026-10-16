@@ -97,7 +97,7 @@ namespace WebAppNetCore.Controllers
             model.TokenType = result.Properties?.GetTokenValue("token_type");
             model.HasRefreshToken = !string.IsNullOrEmpty(result.Properties?.GetTokenValue("refresh_token"));
             model.ExpiresAt = result.Properties?.GetTokenValue("expires_at");
-            model.AccessTokenJkt = ReadConfirmationThumbprint(accessToken);
+            model.AccessTokenJkt = AccessTokenInspector.ReadConfirmationThumbprint(accessToken);
 
             var session = sessionStore.Get(result.Properties);
             model.SessionStateAvailable = session != null;
@@ -110,24 +110,6 @@ namespace WebAppNetCore.Controllers
             }
 
             return model;
-        }
-
-        /// <summary>
-        /// The cnf.jkt claim of a JWT access token (RFC 9449 section 6.1), or null.
-        /// </summary>
-        private static string ReadConfirmationThumbprint(string accessToken)
-        {
-            var handler = new JsonWebTokenHandler();
-            if (string.IsNullOrEmpty(accessToken) || !handler.CanReadToken(accessToken))
-            {
-                return null;
-            }
-
-            var token = handler.ReadJsonWebToken(accessToken);
-            return token.TryGetPayloadValue<JsonElement>("cnf", out var confirmation)
-                && confirmation.ValueKind == JsonValueKind.Object
-                && confirmation.TryGetProperty("jkt", out var jkt)
-                && jkt.ValueKind == JsonValueKind.String ? jkt.GetString() : null;
         }
 
         public IActionResult Error()

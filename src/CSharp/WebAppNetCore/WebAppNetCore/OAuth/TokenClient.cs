@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace WebAppNetCore.OAuth
 {
@@ -41,6 +43,11 @@ namespace WebAppNetCore.OAuth
             {
                 parameters.Remove("code_verifier");
             }
+            else if (fault == Fault.WrongCodeVerifier)
+            {
+                // A well-formed verifier (43 characters) that does not match the code_challenge.
+                parameters["code_verifier"] = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+            }
             else if (fault == Fault.TokenRedirectUriMismatch)
             {
                 // Another path on the same origin, so that a connection can register it and only the match with the
@@ -68,6 +75,17 @@ namespace WebAppNetCore.OAuth
                 { "refresh_token", refreshToken }
             };
             return SendAsync("Token request (refresh token)", parameters, session, fault, cancellationToken);
+        }
+
+        /// <summary>
+        /// A client credentials grant (RFC 6749 section 4.4) without a sign-in, with a proof of the given key when it is not null.
+        /// </summary>
+        public async Task<OpenIdConnectMessage> ClientCredentialsAsync(DPoPKey dpopKey, CancellationToken cancellationToken)
+        {
+            var metadata = await identifyMetadata.GetAsync(cancellationToken);
+            var tokenEndpoint = IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
+            var parameters = new Dictionary<string, string> { { "grant_type", "client_credentials" } };
+            return await SendAsync("Token request (client credentials)", parameters, null, Fault.None, metadata, tokenEndpoint, dpopKey, tokenEndpoint, cancellationToken);
         }
 
         private async Task<OpenIdConnectMessage> SendAsync(
@@ -109,13 +127,31 @@ namespace WebAppNetCore.OAuth
             try
             {
                 OpenIdConnectMessage tokenResponse;
-                if (fault == Fault.ReplayDPoPProofOnRefresh && dpopKey != null)
+                if ((fault == Fault.ReplayDPoPProofOnRefresh && dpopKey != null) || fault == Fault.ReplayClientAssertion)
                 {
-                    // The result is the response to the second request, which sends the proof of the first one again.
-                    var replay = new ProofReplay();
+                    // The result is the response to the second request, which sends the proof or the client assertion of the first again.
+                    var replay = new RequestReplay { ReplayProof = fault == Fault.ReplayDPoPProofOnRefresh, ReplayAssertion = fault == Fault.ReplayClientAssertion };
                     await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken, replay);
-                    session?.Trace.Add("Fault injection", "ReplayDPoPProofOnRefresh: the next refresh request sends the same proof");
+                    session?.Trace.Add("Fault injection", fault + ": the next refresh request sends the same " + (replay.ReplayProof ? "proof" : "client assertion"));
                     tokenResponse = await SendAsync(step, grantParameters, session, fault, metadata, tokenEndpoint, dpopKey, htu, cancellationToken, replay);
+                }
+                else if (fault == Fault.WrongDPoPKeyThenRetry && dpopKey != null)
+                {
+                    // The first request has a proof of a new key; a server that binds the code must reject it without consuming the code.
+                    using (var wrongKey = DPoPKey.Create())
+                    {
+                        try
+                        {
+                            await SendAsync(step, grantParameters, session, Fault.None, metadata, tokenEndpoint, wrongKey, htu, cancellationToken);
+                            session?.Trace.Add("Fault injection", "WrongDPoPKeyThenRetry: the request with a new key succeeded");
+                        }
+                        catch (OAuthClientException exception)
+                        {
+                            session?.Trace.Add("Fault injection", "WrongDPoPKeyThenRetry: the request with a new key failed (" + exception.Message + "); the next request uses the key of the sign-in");
+                        }
+                    }
+
+                    tokenResponse = await SendAsync(step, grantParameters, session, Fault.None, metadata, tokenEndpoint, dpopKey, htu, cancellationToken);
                 }
                 else
                 {
@@ -147,7 +183,7 @@ namespace WebAppNetCore.OAuth
             DPoPKey dpopKey,
             string htu,
             CancellationToken cancellationToken,
-            ProofReplay replay = null)
+            RequestReplay replay = null)
         {
             // RedeemAsOtherClient and RefreshAsOtherClient authenticate as another client with the credentials of this one.
             var clientId = fault == Fault.RedeemAsOtherClient || fault == Fault.RefreshAsOtherClient ? configuration.OtherClientId() : null;
@@ -158,15 +194,32 @@ namespace WebAppNetCore.OAuth
                 var parameters = new Dictionary<string, string>(grantParameters);
                 using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
                 var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault, clientId);
+                if (replay?.ReplayAssertion == true)
+                {
+                    if (replay.Assertion != null && clientAssertion != null)
+                    {
+                        parameters["client_assertion"] = clientAssertion = replay.Assertion;
+                    }
+
+                    replay.Assertion = clientAssertion;
+                }
+
                 if (dpopKey != null)
                 {
-                    var proof = replay?.Proof ?? DPoPProofFactory.Create(fault, dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce);
-                    if (replay != null)
+                    var proof = replay?.ReplayProof == true && replay.Proof != null
+                        ? replay.Proof
+                        : DPoPProofFactory.Create(fault, dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce);
+                    if (replay?.ReplayProof == true)
                     {
                         replay.Proof = proof;
                     }
 
                     request.Headers.Add("DPoP", proof);
+                    if (fault == Fault.TwoProofs)
+                    {
+                        // A second DPoP header with another valid proof (RFC 9449 section 4.3 allows only one).
+                        request.Headers.Add("DPoP", DPoPProofFactory.Create(dpopKey, configuration.DPoPSigningAlgorithm(), "POST", htu, nonce: dpopNonce));
+                    }
                 }
                 request.Content = new FormUrlEncodedContent(parameters);
 
@@ -208,10 +261,16 @@ namespace WebAppNetCore.OAuth
             }
         }
 
-        /// <summary>The proof that ReplayDPoPProofOnRefresh sends in two requests.</summary>
-        private sealed class ProofReplay
+        /// <summary>The proof (ReplayDPoPProofOnRefresh) or the client assertion (ReplayClientAssertion) that two requests share.</summary>
+        private sealed class RequestReplay
         {
+            public bool ReplayProof { get; set; }
+
+            public bool ReplayAssertion { get; set; }
+
             public string Proof { get; set; }
+
+            public string Assertion { get; set; }
         }
     }
 }
