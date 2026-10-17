@@ -259,18 +259,6 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 
 Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 
-## Live checklist
-
-Run these checks against an Identify connection that is configured as above. They follow "Check the configuration" in the Identify configuration guide. Live tests against an installation need an approved rules of engagement.
-
-1. Start the sample. The startup log lists the building blocks without warnings.
-2. Sign in. The trace shows the PAR response with HTTP 201 and `expires_in` below 600, the authorization response with "iss check passed", and the token response with `token_type=DPoP`. The access token panel shows "Bound to the key of the sign-in: Yes", and the decoded access token header has `alg` PS256.
-3. Click **Call UserInfo** and **Refresh access token**. Both succeed, and the refresh token is unchanged.
-4. Sign in with the fault `SkipPar`. Identify shows an error (`invalid_request`).
-5. Set `ClientAssertion:Audience` to `TokenEndpoint` and sign in. The error page shows `invalid_client` from the PAR endpoint.
-6. Sign in with the fault `NoDPoPProof`. The error page shows the token error.
-7. Run the other faults of the table, and record the results of the rows marked "verify".
-
 ## FAPI 2.0 client requirements
 
 | FAPI item | Setting or capability |

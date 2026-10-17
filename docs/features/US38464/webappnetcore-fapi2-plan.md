@@ -295,7 +295,7 @@ Stage C ends with a review.
 
 ### Live verification
 
-After Stage C, run the sample against an Identify Runtime built from `feature/38464-fapi`, with a connection configured as the Identify configuration guide describes. Run the README checklist, and record the results and the "verify" rows of WP9. This run also gives the deployed-Runtime smoke test that the Identify progress document lists as an open item: PAR, the authorization request with `request_uri`, login, and token issuance. Live tests need the approved rules of engagement that the Identify configuration guide names.
+After Stage C, run the sample against an Identify Runtime built from `feature/38464-fapi`, with a connection configured as the Identify configuration guide describes. Run the live checklist, and record the results and the "verify" rows of WP9. This run also gives the deployed-Runtime smoke test that the Identify progress document lists as an open item: PAR, the authorization request with `request_uri`, login, and token issuance. Live tests need the approved rules of engagement that the Identify configuration guide names.
 
 ## 9. FAPI 2.0 client requirements and settings
 
@@ -368,6 +368,7 @@ Differences from the plan and facts found during the implementation:
 - The plan put the result of a UserInfo or refresh action in the protocol panel. It is at the top of the home page instead, because the token display above the panel is long.
 - The stub Identify uses the Runtime path layout (`/runtime/oauth2/...`), so that WP1 could test the earlier code, which built the token URL from `IssuerDomain`.
 - `/test/session` exists only in the test host. It returns the claims, tokens, and items of the cookie session.
+- The live checklist is not in the README. The live test documentation is kept outside this repository.
 
 Open items:
 
