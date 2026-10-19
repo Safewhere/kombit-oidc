@@ -98,7 +98,7 @@ The existing settings `TokenAuthnMethod`, `JwtAssertionSigningCertPath`, `JwtAss
 - The token, PAR, and UserInfo endpoints come from discovery. The discovered `issuer` must equal `ClaimsIssuer` (FAPI 5.3.3.1 items 9 to 11).
 - RFC 9207: a present `iss` must equal the discovered issuer. When discovery has `authorization_response_iss_parameter_supported=true`, a missing `iss` fails (FAPI 5.3.3.2 item 5).
 - The nonce has 43 characters: 32 random bytes, base64url (FAPI 5.3.3.2 item 7).
-- DPoP server nonce (FAPI 5.3.3.1 item 8): after `400` with `error=use_dpop_nonce` and a `DPoP-Nonce` header at the token or PAR endpoint, or `401` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` at UserInfo, the sample retries once. The retry has a new proof with the nonce and a new client assertion. Identify does not send nonces, so only the unit tests cover this.
+- DPoP server nonce (FAPI 5.3.3.1 item 8): after `400` with `error=use_dpop_nonce` and a `DPoP-Nonce` header at the token or PAR endpoint, or `401` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` at UserInfo, the sample retries once. The retry has a new proof with the nonce and a new client assertion. The sample keeps the latest `DPoP-Nonce` of each server, also from a successful response, for the next proofs to that server (RFC 9449 section 8.2): the PAR and token endpoints share the nonce of the authorization server, and UserInfo has its own. Identify does not send nonces, so only the unit tests cover this.
 - UserInfo uses the scheme that matches the `token_type` of the stored token. A DPoP request has a proof with `ath`.
 - Refresh uses the same DPoP key. The sample keeps the old refresh token when the response has none, and it stores a returned replacement (FAPI 5.3.3.1 item 6).
 - The OAuth `error` and `error_description` from PAR, token, and UserInfo are shown on the error page or the home page.
@@ -157,7 +157,7 @@ New files, in a new folder `OAuth/` (not "Fapi", because no code is FAPI-specifi
 | `OAuth/IdentifyMetadata.cs` | Reads discovery through `OpenIdConnectOptions.ConfigurationManager`. Checks that `issuer` equals `ClaimsIssuer`. Gives the token, PAR, and UserInfo endpoints and the RFC 9207 flag. |
 | `OAuth/ClientAuthentication.cs` | Adds `client_secret_post`, `client_secret_basic`, or `private_key_jwt` to a request for any endpoint. The assertion has `iss` and `sub` equal to the client ID, `aud` from `ClientAssertion:Audience`, a new `jti`, `iat`, `exp`, the `kid` of today, and `alg` from `ClientAssertion:SigningAlgorithm`. |
 | `OAuth/DPoPKey.cs` | An RSA 2048 key, its public JWK (`kty`, `n`, `e` only), and its RFC 7638 thumbprint. |
-| `OAuth/DPoPProofFactory.cs` | Creates a proof. Header: `typ=dpop+jwt`, `alg`, `jwk`, no `kid`. Claims: `jti`, `htm`, `htu` without query and fragment, `iat`, `ath` for resource requests, and `nonce` after a challenge. No `exp` or `nbf` (`SetDefaultTimesOnTokenCreation=false`). |
+| `OAuth/DPoPProofFactory.cs` | Creates a proof. Header: `typ=dpop+jwt`, `alg`, `jwk`, no `kid`. Claims: `jti`, `htm`, `htu` without query and fragment, `iat`, `ath` for resource requests, and `nonce` when the server has sent one. No `exp` or `nbf` (`SetDefaultTimesOnTokenCreation=false`). |
 | `OAuth/ClientSessionStore.cs` | An in-memory store (`IMemoryCache`, sliding expiration) of the state of each sign-in, by a random handle: the DPoP key and the protocol trace. |
 | `OAuth/PushedAuthorizationClient.cs` | Sends the PAR request: the parameters of the handler's message, the client authentication, and an optional `DPoP` header. Retries once on `use_dpop_nonce`. Returns `request_uri` and `expires_in`. Any status other than 201 fails with the OAuth error. |
 | `OAuth/TokenClient.cs` | The `authorization_code` and `refresh_token` grants, with client authentication, an optional proof, the nonce retry, and the `token_type` check. Returns an `OpenIdConnectMessage`. |
@@ -268,7 +268,7 @@ The expected results come from section 5 of the Identify design. Results marked 
 | Fault | Step | Change | Expected Identify result |
 |---|---|---|---|
 | `SkipPar` | Authorization | A direct request, also when PAR is on | `invalid_request` when the connection requires PAR |
-| `ExtraBrowserParameter` | Authorization | `scope` next to `request_uri` in the browser request | Error response (verify) |
+| `ExtraBrowserParameter` | Authorization | `scope` next to `request_uri` in the browser request; GET with PAR only, otherwise the sign-in does not start | Error response (verify) |
 | `AssertionAudienceArray` | PAR, token | `aud` as a JSON array that contains the issuer | `invalid_client` with `clientAssertion.audience=issuer` |
 | `AssertionFutureIat` | PAR, token | `iat` 120 seconds in the future | `invalid_client` when `clientJwt.clockSkewInSeconds` is below 120 |
 | `ParProofKeyMismatch` | PAR | The PAR proof uses another key than `dpop_jkt` | `invalid_request` |

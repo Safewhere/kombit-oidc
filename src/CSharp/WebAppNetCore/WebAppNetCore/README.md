@@ -115,7 +115,7 @@ These capabilities have no setting:
 - The nonce has 43 characters (FAPI 2.0 allows at most 64), and the ID token nonce is checked against the nonce cookie of the browser.
 - Each sign-in gets a new RSA 2048 DPoP key. All proofs of the sign-in use it: PAR, token, refresh, and UserInfo.
 - UserInfo uses the DPoP scheme and a proof with `ath` for a DPoP-bound access token, and the Bearer scheme otherwise.
-- After a DPoP nonce challenge (`use_dpop_nonce`), the sample retries once with the nonce (RFC 9449 sections 8 and 9). Identify does not send nonces, so only the unit tests cover this.
+- After a DPoP nonce challenge (`use_dpop_nonce`), the sample retries once with the nonce (RFC 9449 sections 8 and 9). It keeps the latest `DPoP-Nonce` of each server, also from a successful response, and puts it in the next proofs to that server: one nonce for the PAR and token endpoints, another for UserInfo. Identify does not send nonces, so only the unit tests cover this.
 - Refresh keeps the old refresh token when the response has none, and stores a returned replacement.
 
 ## Example: the FAPI 2.0 combination
@@ -190,7 +190,7 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | Fault | Action | Change | Expected Identify result |
 |---|---|---|---|
 | `SkipPar` | Sign in | A direct authorization request, also when PAR is on | `invalid_request` when the connection requires PAR |
-| `ExtraBrowserParameter` | Sign in | `scope` next to `request_uri` in the browser request (GET only) | An error response (verify) |
+| `ExtraBrowserParameter` | Sign in | `scope` next to `request_uri` in the browser request (GET with PAR only; otherwise the sign-in does not start) | An error response (verify) |
 | `AssertionAudienceArray` | Sign in | Client assertion `aud` as a JSON array | `invalid_client` with `clientAssertion.audience=issuer` |
 | `AssertionFutureIat` | Sign in | Client assertion `iat` 120 seconds in the future | `invalid_client` when `clientJwt.clockSkewInSeconds` is below 120 |
 | `ParProofKeyMismatch` | Sign in | A PAR proof of another key than `dpop_jkt` | `invalid_request` |

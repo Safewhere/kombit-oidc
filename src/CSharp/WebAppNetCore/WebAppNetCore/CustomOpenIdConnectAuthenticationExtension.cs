@@ -37,6 +37,7 @@ namespace WebAppNetCore
                 .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
             services.AddSingleton<IdentifyMetadata>();
             services.AddSingleton<ClientAuthentication>();
+            services.AddSingleton<DPoPNonceStore>();
             services.AddSingleton<TokenClient>();
             services.AddSingleton<UserInfoClient>();
             services.AddSingleton<PushedAuthorizationClient>();
@@ -104,13 +105,21 @@ namespace WebAppNetCore
                     Console.WriteLine("OnRedirectToIdentityProvider.");
                     var services = context.HttpContext.RequestServices;
                     // Fails the sign-in early when the discovery document belongs to another issuer.
-                    await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
+                    var metadata = await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
                     // The handle goes into the state parameter, because the handler protects the properties after this event.
                     var session = services.GetRequiredService<ClientSessionStore>().Create(context.Properties);
                     session.SignInFault = FaultInjection.Read(context.Properties);
                     if (session.SignInFault != Fault.None)
                     {
                         session.Trace.Add("Fault injection", session.SignInFault + ": " + FaultInjection.Describe(session.SignInFault));
+                    }
+
+                    if (session.SignInFault == Fault.ExtraBrowserParameter && !RedirectsAfterPush(configuration, metadata))
+                    {
+                        // The fault changes the redirect after the push. Without it, the browser would send a valid request, and the
+                        // result would look like an accepted violation.
+                        throw new OAuthClientException(
+                            "The fault ExtraBrowserParameter needs AuthorizationEndpointMethod GET and a pushed authorization request. The sign-in did not start.");
                     }
 
                     if (configuration.UsesDPoPKey())
@@ -169,6 +178,7 @@ namespace WebAppNetCore
                     if (fault == Fault.ExtraBrowserParameter)
                     {
                         // The handler writes the redirect after this event, so the parameter is added when the response starts.
+                        // OnRedirectToIdentityProvider has stopped the sign-in with POST, where the handler writes a form instead.
                         var response = context.HttpContext.Response;
                         var scope = string.Join(" ", context.Options.Scope);
                         response.OnStarting(() =>
@@ -358,6 +368,18 @@ namespace WebAppNetCore
                     return Task.CompletedTask;
                 }
             };
+        }
+
+        /// <summary>
+        /// Whether the handler pushes the request and then redirects the browser with GET. It pushes with Require, and with
+        /// UseIfAvailable when the discovery document has a PAR endpoint.
+        /// </summary>
+        private static bool RedirectsAfterPush(IConfiguration configuration, OpenIdConnectConfiguration metadata)
+        {
+            var pushedAuthorization = configuration.PushedAuthorization();
+            return configuration.AuthorizationEndpointMethod() == OpenIdConnectRedirectBehavior.RedirectGet
+                && (pushedAuthorization == PushedAuthorizationBehavior.Require
+                    || (pushedAuthorization == PushedAuthorizationBehavior.UseIfAvailable && !string.IsNullOrEmpty(metadata.PushedAuthorizationRequestEndpoint)));
         }
 
         private static X509Certificate2 GetDecryptionCertificate(IConfiguration configuration)

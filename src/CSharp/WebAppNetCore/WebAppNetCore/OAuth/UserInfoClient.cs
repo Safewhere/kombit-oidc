@@ -20,12 +20,14 @@ namespace WebAppNetCore.OAuth
         private readonly IHttpClientFactory httpClientFactory;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly IConfiguration configuration;
+        private readonly DPoPNonceStore dpopNonces;
 
-        public UserInfoClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, IConfiguration configuration)
+        public UserInfoClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, IConfiguration configuration, DPoPNonceStore dpopNonces)
         {
             this.httpClientFactory = httpClientFactory;
             this.identifyMetadata = identifyMetadata;
             this.configuration = configuration;
+            this.dpopNonces = dpopNonces;
         }
 
         /// <summary>
@@ -51,7 +53,7 @@ namespace WebAppNetCore.OAuth
 
             // UserInfoProofOtherKey signs a valid proof with a new key: the use of the access token by another key holder.
             using var otherKey = dpopKey != null && fault == Fault.UserInfoProofOtherKey ? DPoPKey.Create() : null;
-            string dpopNonce = null;
+            var server = DPoPNonceStore.ResourceServer(userInfoEndpoint);
             string replayedProof = null;
             for (var attempt = 1; ; attempt++)
             {
@@ -59,7 +61,7 @@ namespace WebAppNetCore.OAuth
                 string proof = null;
                 if (dpopKey != null)
                 {
-                    proof = replayedProof ?? CreateProof(fault, otherKey ?? dpopKey, userInfoEndpoint, metadata.TokenEndpoint, accessToken, dpopNonce);
+                    proof = replayedProof ?? CreateProof(fault, otherKey ?? dpopKey, userInfoEndpoint, metadata.TokenEndpoint, accessToken, dpopNonces.Get(server));
                     request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
                     request.Headers.Add("DPoP", proof);
                 }
@@ -69,6 +71,7 @@ namespace WebAppNetCore.OAuth
                 }
 
                 using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                dpopNonces.Save(server, response);
                 if (fault == Fault.ReplayDPoPProof && proof != null && replayedProof == null)
                 {
                     session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, "fault ReplayDPoPProof: the next call sends the same proof");
@@ -82,7 +85,6 @@ namespace WebAppNetCore.OAuth
                     if (challengedNonce != null)
                     {
                         session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
-                        dpopNonce = challengedNonce;
                         continue;
                     }
 

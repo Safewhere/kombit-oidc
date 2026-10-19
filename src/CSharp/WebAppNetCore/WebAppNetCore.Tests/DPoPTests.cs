@@ -258,6 +258,65 @@ public sealed class DPoPTests
     }
 
     [Fact]
+    public async Task TheNonceOfASuccessfulResponseIsUsedInTheNextProofsToTheSameServer()
+    {
+        using var factory = new TestWebApplicationFactory(settings: DPoP(sendProofToPar: true, pushedAuthorization: "Require"));
+        factory.Identify.ParResponder = recorded => WithNonce(factory.Identify.DefaultParResponse(recorded), "par-nonce");
+        factory.Identify.TokenResponder = recorded => WithNonce(factory.Identify.DefaultTokenResponse(recorded), "token-nonce");
+        factory.Identify.UserInfoResponder = recorded => WithNonce(factory.Identify.DefaultUserInfoResponse(recorded), "userinfo-nonce");
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+        using var refresh = await SignInFlow.PostFormAsync(client, "/Account/Refresh");
+        using var userInfo = await SignInFlow.PostFormAsync(client, "/Account/UserInfo");
+
+        // The PAR and token endpoints share the nonce of the authorization server; UserInfo has its own.
+        Assert.Null(DPoPProof.Read(Assert.Single(factory.Identify.RequestsTo(StubIdentify.ParEndpoint)).Header("DPoP")!).Claim("nonce"));
+        var tokenRequests = factory.Identify.RequestsTo(StubIdentify.TokenEndpoint);
+        Assert.Equal(2, tokenRequests.Count);
+        Assert.Equal("par-nonce", DPoPProof.Read(tokenRequests[0].Header("DPoP")!).Claim("nonce"));
+        Assert.Equal("token-nonce", DPoPProof.Read(tokenRequests[1].Header("DPoP")!).Claim("nonce"));
+        var userInfoRequests = factory.Identify.RequestsTo(StubIdentify.UserInfoEndpoint);
+        Assert.Equal(2, userInfoRequests.Count);
+        Assert.Null(DPoPProof.Read(userInfoRequests[0].Header("DPoP")!).Claim("nonce"));
+        Assert.Equal("userinfo-nonce", DPoPProof.Read(userInfoRequests[1].Header("DPoP")!).Claim("nonce"));
+    }
+
+    [Fact]
+    public async Task TheNonceOfAChallengeIsKeptForTheNextRequest()
+    {
+        using var factory = new TestWebApplicationFactory(settings: DPoP());
+        var challenged = false;
+        factory.Identify.TokenResponder = recorded =>
+        {
+            if (!challenged)
+            {
+                challenged = true;
+                var challenge = StubIdentify.OAuthError(HttpStatusCode.BadRequest, "use_dpop_nonce", "Authorization server requires nonce in DPoP proof");
+                challenge.Headers.Add("DPoP-Nonce", "token-nonce");
+                return challenge;
+            }
+
+            return factory.Identify.DefaultTokenResponse(recorded);
+        };
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        await SignInFlow.SignInAsync(client, factory);
+
+        using var refresh = await SignInFlow.PostFormAsync(client, "/Account/Refresh");
+
+        var requests = factory.Identify.RequestsTo(StubIdentify.TokenEndpoint);
+        Assert.Equal(3, requests.Count);
+        Assert.Equal("refresh_token", requests[2].Form["grant_type"]);
+        Assert.Equal("token-nonce", DPoPProof.Read(requests[2].Header("DPoP")!).Claim("nonce"));
+    }
+
+    private static HttpResponseMessage WithNonce(HttpResponseMessage response, string nonce)
+    {
+        response.Headers.Add("DPoP-Nonce", nonce);
+        return response;
+    }
+
+    [Fact]
     public async Task ASecondNonceChallengeFailsTheRequest()
     {
         using var factory = new TestWebApplicationFactory(settings: DPoP());

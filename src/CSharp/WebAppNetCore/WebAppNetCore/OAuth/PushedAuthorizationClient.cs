@@ -23,13 +23,16 @@ namespace WebAppNetCore.OAuth
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
         private readonly IConfiguration configuration;
+        private readonly DPoPNonceStore dpopNonces;
 
-        public PushedAuthorizationClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration)
+        public PushedAuthorizationClient(
+            IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration, DPoPNonceStore dpopNonces)
         {
             this.httpClientFactory = httpClientFactory;
             this.identifyMetadata = identifyMetadata;
             this.clientAuthentication = clientAuthentication;
             this.configuration = configuration;
+            this.dpopNonces = dpopNonces;
         }
 
         public async Task<PushedAuthorizationResult> PushAsync(
@@ -43,9 +46,11 @@ namespace WebAppNetCore.OAuth
             using var faultKey = fault == Fault.ParProofKeyMismatch ? DPoPKey.Create() : null;
             dpopKey = faultKey ?? dpopKey;
 
-            string dpopNonce = null;
+            // The PAR endpoint and the token endpoint share the nonce of the authorization server.
+            var server = DPoPNonceStore.AuthorizationServer(metadata);
             for (var attempt = 1; ; attempt++)
             {
+                var dpopNonce = dpopNonces.Get(server);
                 // All authorization parameters of the handler: client_id, response_type, redirect_uri, scope, state, nonce, PKCE, and
                 // the parameters that OnRedirectToIdentityProvider added.
                 var parameters = authorizationRequest.Parameters.ToDictionary(p => p.Key, p => p.Value);
@@ -63,13 +68,13 @@ namespace WebAppNetCore.OAuth
                 request.Content = new FormUrlEncodedContent(parameters.Concat(repeated));
 
                 using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                dpopNonces.Save(server, response);
                 if (!response.IsSuccessStatusCode)
                 {
                     var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
                     if (challengedNonce != null)
                     {
                         session?.Trace.AddExchange(Step, request, parameters, clientAssertion, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
-                        dpopNonce = challengedNonce;
                         continue;
                     }
 

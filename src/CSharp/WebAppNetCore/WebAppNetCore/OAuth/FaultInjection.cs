@@ -147,7 +147,7 @@ namespace WebAppNetCore.OAuth
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
         {
             [Fault.SkipPar] = "A direct authorization request. Expected: invalid_request when the connection requires PAR.",
-            [Fault.ExtraBrowserParameter] = "scope next to request_uri in the browser request (GET only). Expected: an error response (verify).",
+            [Fault.ExtraBrowserParameter] = "scope next to request_uri in the browser request (GET with PAR only; otherwise the sign-in does not start). Expected: an error response (verify).",
             [Fault.AssertionAudienceArray] = "Client assertion aud as a JSON array. Expected: invalid_client with clientAssertion.audience=issuer.",
             [Fault.AssertionFutureIat] = "Client assertion iat 120 seconds in the future. Expected: invalid_client when clientJwt.clockSkewInSeconds is below 120.",
             [Fault.ParProofKeyMismatch] = "A PAR proof of another key than dpop_jkt. Expected: invalid_request.",

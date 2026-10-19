@@ -10,11 +10,18 @@ namespace WebAppNetCore.OAuth
     /// <summary>
     /// Reads a DPoP server nonce challenge. FAPI 2.0 section 5.3.3.1 item 8 requires that the client supports it, although
     /// Identify does not send nonces. The client retries a challenged request once, with a new proof that has the nonce.
+    /// DPoPNonceStore keeps the latest nonce of each server for the next requests.
     /// </summary>
     public static class DPoPNonce
     {
         public const string HeaderName = "DPoP-Nonce";
         private const string UseDPoPNonce = "use_dpop_nonce";
+
+        /// <summary>Returns the nonce of the DPoP-Nonce header of any response, or null when the response has none.</summary>
+        public static string Read(HttpResponseMessage response)
+        {
+            return response.Headers.TryGetValues(HeaderName, out var values) ? values.FirstOrDefault(v => !string.IsNullOrEmpty(v)) : null;
+        }
 
         /// <summary>
         /// Returns the nonce of a challenge, or null when the response is not a challenge. An authorization server answers
@@ -23,13 +30,8 @@ namespace WebAppNetCore.OAuth
         /// </summary>
         public static async Task<string> ReadChallengeAsync(HttpResponseMessage response)
         {
-            if (!response.Headers.TryGetValues(HeaderName, out var values))
-            {
-                return null;
-            }
-
-            var nonce = values.FirstOrDefault();
-            if (string.IsNullOrEmpty(nonce))
+            var nonce = Read(response);
+            if (nonce == null)
             {
                 return null;
             }

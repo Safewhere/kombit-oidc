@@ -20,13 +20,16 @@ namespace WebAppNetCore.OAuth
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
         private readonly IConfiguration configuration;
+        private readonly DPoPNonceStore dpopNonces;
 
-        public TokenClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration)
+        public TokenClient(
+            IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration, DPoPNonceStore dpopNonces)
         {
             this.httpClientFactory = httpClientFactory;
             this.identifyMetadata = identifyMetadata;
             this.clientAuthentication = clientAuthentication;
             this.configuration = configuration;
+            this.dpopNonces = dpopNonces;
         }
 
         public Task<OpenIdConnectMessage> RedeemCodeAsync(
@@ -187,10 +190,11 @@ namespace WebAppNetCore.OAuth
         {
             // RedeemAsOtherClient and RefreshAsOtherClient authenticate as another client with the credentials of this one.
             var clientId = fault == Fault.RedeemAsOtherClient || fault == Fault.RefreshAsOtherClient ? configuration.OtherClientId() : null;
-            string dpopNonce = null;
+            var server = DPoPNonceStore.AuthorizationServer(metadata);
             for (var attempt = 1; ; attempt++)
             {
                 // Each attempt has a new client assertion and a new proof, because Identify rejects a replayed jti.
+                var dpopNonce = dpopNonces.Get(server);
                 var parameters = new Dictionary<string, string>(grantParameters);
                 using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
                 var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault, clientId);
@@ -224,13 +228,13 @@ namespace WebAppNetCore.OAuth
                 request.Content = new FormUrlEncodedContent(parameters);
 
                 using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                dpopNonces.Save(server, response);
                 if (!response.IsSuccessStatusCode)
                 {
                     var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
                     if (challengedNonce != null)
                     {
                         session?.Trace.AddExchange(step, request, parameters, clientAssertion, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
-                        dpopNonce = challengedNonce;
                         continue;
                     }
 

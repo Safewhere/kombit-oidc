@@ -106,6 +106,23 @@ public sealed class FaultInjectionTests
     }
 
     [Theory]
+    [InlineData("POST", true)]
+    [InlineData("GET", false)]
+    public async Task ExtraBrowserParameterStopsTheSignInWithoutARedirectAfterThePush(string authorizationEndpointMethod, bool par)
+    {
+        // With POST the handler writes a form, and without PAR there is no request_uri, so the fault cannot change the request.
+        using var factory = new TestWebApplicationFactory(authorizationEndpointMethod, Settings(par: par));
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        using var response = await SignInFlow.PostSignInAsync(client, WithFault(Fault.ExtraBrowserParameter));
+
+        Assert.Equal(
+            "The fault ExtraBrowserParameter needs AuthorizationEndpointMethod GET and a pushed authorization request. The sign-in did not start.",
+            SignInFlow.ErrorMessage(await SignInFlow.AssertErrorPageAsync(client, response)));
+        Assert.Empty(factory.Identify.RequestsTo(StubIdentify.ParEndpoint));
+    }
+
+    [Theory]
     [InlineData(Fault.AssertionAudienceArray)]
     [InlineData(Fault.AssertionFutureIat)]
     public async Task AssertionFaultsChangeTheAssertionsAtParAndAtTheTokenEndpoint(Fault fault)
