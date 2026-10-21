@@ -30,11 +30,26 @@ namespace WebAppNetCore.OAuth
         /// <summary>
         /// Adds the client authentication to the request. Returns the client assertion for private_key_jwt, and null otherwise.
         /// Give clientId to authenticate as another client with the credentials of this one, for the faults RedeemAsOtherClient
-        /// and RefreshAsOtherClient.
+        /// and RefreshAsOtherClient. The faults IntrospectWithoutClientAuthentication, RevokeWithoutClientAuthentication, and
+        /// RefreshWithoutClientAuthentication send only client_id.
         /// </summary>
         public string Apply(HttpRequestMessage request, IDictionary<string, string> parameters, OpenIdConnectConfiguration metadata, Fault fault = Fault.None, string clientId = null)
         {
             clientId ??= configuration.ClientId();
+            if (fault == Fault.IntrospectWithoutClientAuthentication || fault == Fault.RevokeWithoutClientAuthentication || fault == Fault.RefreshWithoutClientAuthentication)
+            {
+                // Only client_id, as a public client sends it. With the method none, every request is like that, and the result
+                // would look like an accepted violation.
+                if (configuration.TokenAuthnMethod() == "none")
+                {
+                    throw new OAuthClientException(
+                        "The fault " + fault + " needs a client that authenticates: TokenAuthnMethod none sends no client authentication anyway. The request was not sent.");
+                }
+
+                parameters["client_id"] = clientId;
+                return null;
+            }
+
             switch (configuration.TokenAuthnMethod())
             {
                 case "client_secret_post":
@@ -115,6 +130,10 @@ namespace WebAppNetCore.OAuth
                 case Fault.AssertionWithoutJti:
                     claims.Remove("jti");
                     break;
+
+                case Fault.AssertionNbfFuture:
+                    claims["nbf"] = DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds();
+                    break;
             }
 
             // Identify accepts RS256 to PS512, restricted per connection by the rule clientJwt.signingAlgorithms.
@@ -129,8 +148,9 @@ namespace WebAppNetCore.OAuth
                 SigningCredentials = signingCredentials
             };
 
-            // Without default times for the faults, so that AssertionWithoutExp has no exp and AssertionExpired gets no nbf after its exp.
-            var defaultTimes = fault != Fault.AssertionWithoutExp && fault != Fault.AssertionExpired;
+            // Without default times for the faults, so that AssertionWithoutExp has no exp, AssertionExpired gets no nbf after its
+            // exp, and AssertionNbfFuture keeps its nbf.
+            var defaultTimes = fault != Fault.AssertionWithoutExp && fault != Fault.AssertionExpired && fault != Fault.AssertionNbfFuture;
             return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = defaultTimes }.CreateToken(tokenDescriptor);
         }
 

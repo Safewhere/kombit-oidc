@@ -261,6 +261,19 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Intros
 | `DPoPSchemeWithoutProof` | Call UserInfo | The DPoP scheme with the DPoP-bound access token and no `DPoP` header | HTTP 401 `invalid_dpop_proof` |
 | `RevokeWithClientSecret` | Revoke | The revocation request with `client_secret_post` instead of the configured method | `invalid_client` |
 | `PasswordGrant` | Get client credentials token | A token request with `grant_type` `password`, a user name that does not exist, and a random password | `unauthorized_client` when the connection does not allow the password flow |
+| `ProofWithoutHtm` | Sign in | A token proof without `htm` | `invalid_dpop_proof` |
+| `ProofWithoutHtu` | Sign in | A token proof without `htu` | `invalid_dpop_proof` |
+| `ProofWithoutIat` | Sign in | A token proof without `iat` | `invalid_dpop_proof` |
+| `ReplayParAssertionAtToken` | Sign in | The token request of the code with the client assertion of the pushed request. Needs `private_key_jwt` and PAR | `invalid_client`: the PAR endpoint used its `jti` |
+| `AssertionNbfFuture` | Sign in | Client assertions with `nbf` 120 seconds in the future and `iat` now | `invalid_client` (verify) |
+| `UserInfoProofAlgNone` | Call UserInfo | A proof with the `jwk` of the DPoP key, `alg` `none`, and no signature | HTTP 401 `invalid_dpop_proof` |
+| `UserInfoProofSignatureOtherKey` | Call UserInfo | A proof with the `jwk` of the DPoP key, signed with another key | HTTP 401 `invalid_dpop_proof` |
+| `UserInfoProofWithoutJti` | Call UserInfo | A proof without `jti` | HTTP 401 `invalid_dpop_proof` |
+| `UserInfoProofIatOld` | Call UserInfo | A proof with `iat` 90 seconds in the past | HTTP 401 `invalid_dpop_proof` |
+| `AccessTokenInQuery` | Call UserInfo | A GET with the DPoP-bound access token in the `access_token` query parameter and a valid proof, without an `Authorization` header. FAPI 2.0 section 5.3.4 forbids access tokens in the query | HTTP 401 `invalid_token`, or HTTP 400 `invalid_request` when UserInfo does not read the query (verify) |
+| `IntrospectWithoutClientAuthentication` | Introspect | The introspection request with `client_id` and no client authentication | `invalid_client` |
+| `RevokeWithoutClientAuthentication` | Revoke | The revocation request with `client_id` and no client authentication | `invalid_client` |
+| `RefreshWithoutClientAuthentication` | Refresh | The refresh request of a confidential client with `client_id` and no client authentication. The refresh token is not bound to the DPoP key, so only client authentication protects it | `invalid_client` |
 
 Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 

@@ -89,6 +89,11 @@ namespace WebAppNetCore.OAuth
                     ProtocolTrace.Detail("request_uri", result.RequestUri),
                     ProtocolTrace.Detail("expires_in", result.ExpiresIn?.ToString())
                 });
+                if (fault == Fault.ReplayParAssertionAtToken && session != null)
+                {
+                    session.PushedClientAssertion = clientAssertion;
+                }
+
                 return result;
             }
         }

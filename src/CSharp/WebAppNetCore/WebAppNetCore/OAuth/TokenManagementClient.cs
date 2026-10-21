@@ -30,7 +30,7 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Introspects the access token and returns the response as indented JSON. IntrospectWithClientSecret authenticates with
-        /// client_secret_post instead of the configured method.
+        /// client_secret_post instead of the configured method, and IntrospectWithoutClientAuthentication sends only client_id.
         /// </summary>
         public async Task<string> IntrospectAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
@@ -42,7 +42,8 @@ namespace WebAppNetCore.OAuth
         }
 
         /// <summary>
-        /// Revokes the access token. RevokeWithClientSecret authenticates with client_secret_post instead of the configured method.
+        /// Revokes the access token. RevokeWithClientSecret authenticates with client_secret_post instead of the configured method,
+        /// and RevokeWithoutClientAuthentication sends only client_id.
         /// </summary>
         public async Task RevokeAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
@@ -64,7 +65,7 @@ namespace WebAppNetCore.OAuth
             }
             else
             {
-                clientAssertion = clientAuthentication.Apply(request, parameters, metadata);
+                clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault);
             }
 
             request.Content = new FormUrlEncodedContent(parameters);

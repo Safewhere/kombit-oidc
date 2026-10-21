@@ -211,6 +211,13 @@ namespace WebAppNetCore.OAuth
                 var parameters = new Dictionary<string, string>(grantParameters);
                 using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint);
                 var clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault, clientId);
+                if (fault == Fault.ReplayParAssertionAtToken)
+                {
+                    // The audience of the PAR assertion is valid here too, so only the jti check can reject it.
+                    parameters["client_assertion"] = clientAssertion = session?.PushedClientAssertion
+                        ?? throw new OAuthClientException("The fault ReplayParAssertionAtToken has no client assertion of a pushed request. The token request was not sent.");
+                }
+
                 if (replay?.ReplayAssertion == true)
                 {
                     if (replay.Assertion != null && clientAssertion != null)

@@ -69,6 +69,9 @@ namespace WebAppNetCore.OAuth
         /// <summary>The PAR response of the sign-in, or null when the request was not pushed.</summary>
         public PushedAuthorizationResult PushedAuthorization { get; set; }
 
+        /// <summary>The client assertion that the PAR endpoint accepted, kept only for the fault ReplayParAssertionAtToken.</summary>
+        public string PushedClientAssertion { get; set; }
+
         /// <summary>The DPoP key of the sign-in, or null when no DPoP setting is on.</summary>
         public DPoPKey DPoPKey { get; set; }
 

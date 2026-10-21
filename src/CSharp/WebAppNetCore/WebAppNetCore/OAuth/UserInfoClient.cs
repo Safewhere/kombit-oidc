@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -63,9 +64,12 @@ namespace WebAppNetCore.OAuth
             string replayedProof = null;
             for (var attempt = 1; ; attempt++)
             {
-                // AccessTokenInForm sends the token in the access_token parameter of a form POST (RFC 6750 section 2.2).
+                // AccessTokenInForm sends the token in the access_token parameter of a form POST (RFC 6750 section 2.2), and
+                // AccessTokenInQuery in the access_token query parameter (RFC 6750 section 2.3), which FAPI 2.0 section 5.3.4 forbids.
                 var form = fault == Fault.AccessTokenInForm ? new Dictionary<string, string> { ["access_token"] = accessToken } : null;
-                using var request = new HttpRequestMessage(form == null ? HttpMethod.Get : HttpMethod.Post, userInfoEndpoint);
+                var inQuery = fault == Fault.AccessTokenInQuery;
+                var requestUri = inQuery ? QueryHelpers.AddQueryString(userInfoEndpoint, "access_token", accessToken) : userInfoEndpoint;
+                using var request = new HttpRequestMessage(form == null ? HttpMethod.Get : HttpMethod.Post, requestUri);
                 string proof = null;
                 if (proofKey != null && fault != Fault.DPoPSchemeWithoutProof)
                 {
@@ -77,7 +81,7 @@ namespace WebAppNetCore.OAuth
                 {
                     request.Content = new FormUrlEncodedContent(form);
                 }
-                else
+                else if (!inQuery)
                 {
                     request.Headers.Authorization = new AuthenticationHeaderValue(proofKey != null ? "DPoP" : "Bearer", accessToken);
                 }
@@ -111,13 +115,19 @@ namespace WebAppNetCore.OAuth
             }
         }
 
+        private static readonly Fault[] BoundTokenFaults =
+        {
+            Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof, Fault.AccessTokenInQuery,
+            Fault.UserInfoProofAlgNone, Fault.UserInfoProofSignatureOtherKey, Fault.UserInfoProofWithoutJti, Fault.UserInfoProofIatOld
+        };
+
         /// <summary>
         /// A fault that changes how a DPoP-bound token is sent needs such a token, and DPoPSchemeForBearerToken needs a token
         /// without the binding. Otherwise the request would be a valid one, and the result would look like an accepted violation.
         /// </summary>
         private static void RequireTokenTypeOfFault(Fault fault, bool boundToken)
         {
-            if ((fault == Fault.AccessTokenInForm || fault == Fault.DPoPSchemeWithoutProof) && !boundToken)
+            if (BoundTokenFaults.Contains(fault) && !boundToken)
             {
                 throw new OAuthClientException(
                     "The fault " + fault + " needs a DPoP-bound access token: sign in with DPoP:BindAccessTokens=true. The UserInfo request was not sent.");
@@ -141,7 +151,7 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// The UserInfo proof for the HTTP method of the request, changed by MissingAth, UserInfoProofWrongHtm,
-        /// UserInfoProofWrongHtu, or UserInfoProofWrongAth.
+        /// UserInfoProofWrongHtu, or UserInfoProofWrongAth, or forged by a UserInfo fault with the same change as a token proof fault.
         /// </summary>
         private string CreateProof(Fault fault, DPoPKey key, string httpMethod, string userInfoEndpoint, string tokenEndpoint, string accessToken, string nonce)
         {
@@ -153,7 +163,15 @@ namespace WebAppNetCore.OAuth
                 Fault.UserInfoProofWrongAth => accessToken + "-other",
                 _ => accessToken
             };
-            return DPoPProofFactory.Create(key, configuration.DPoPSigningAlgorithm(), method, htu, athToken, nonce);
+            var proofFault = fault switch
+            {
+                Fault.UserInfoProofAlgNone => Fault.ProofAlgNone,
+                Fault.UserInfoProofSignatureOtherKey => Fault.ProofSignatureOtherKey,
+                Fault.UserInfoProofWithoutJti => Fault.ProofWithoutJti,
+                Fault.UserInfoProofIatOld => Fault.ProofIatOld,
+                _ => Fault.None
+            };
+            return DPoPProofFactory.Create(proofFault, key, configuration.DPoPSigningAlgorithm(), method, htu, athToken, nonce);
         }
 
         private static async Task<UserInfoResponse> ReadResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)

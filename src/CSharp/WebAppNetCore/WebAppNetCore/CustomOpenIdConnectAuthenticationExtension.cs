@@ -122,6 +122,14 @@ namespace WebAppNetCore
                             "The fault ExtraBrowserParameter needs AuthorizationEndpointMethod GET and a pushed authorization request. The sign-in did not start.");
                     }
 
+                    if (session.SignInFault == Fault.ReplayParAssertionAtToken
+                        && (configuration.TokenAuthnMethod() != "private_key_jwt" || !Pushes(configuration, metadata)))
+                    {
+                        // The fault sends the client assertion of the pushed request again. Without one, it has nothing to send.
+                        throw new OAuthClientException(
+                            "The fault ReplayParAssertionAtToken needs TokenAuthnMethod private_key_jwt and a pushed authorization request. The sign-in did not start.");
+                    }
+
                     if (configuration.UsesDPoPKey())
                     {
                         // One key for each sign-in. The PAR proof, the token proofs, and the UserInfo proofs of the sign-in use it.
@@ -376,10 +384,14 @@ namespace WebAppNetCore
         /// </summary>
         private static bool RedirectsAfterPush(IConfiguration configuration, OpenIdConnectConfiguration metadata)
         {
+            return configuration.AuthorizationEndpointMethod() == OpenIdConnectRedirectBehavior.RedirectGet && Pushes(configuration, metadata);
+        }
+
+        private static bool Pushes(IConfiguration configuration, OpenIdConnectConfiguration metadata)
+        {
             var pushedAuthorization = configuration.PushedAuthorization();
-            return configuration.AuthorizationEndpointMethod() == OpenIdConnectRedirectBehavior.RedirectGet
-                && (pushedAuthorization == PushedAuthorizationBehavior.Require
-                    || (pushedAuthorization == PushedAuthorizationBehavior.UseIfAvailable && !string.IsNullOrEmpty(metadata.PushedAuthorizationRequestEndpoint)));
+            return pushedAuthorization == PushedAuthorizationBehavior.Require
+                || (pushedAuthorization == PushedAuthorizationBehavior.UseIfAvailable && !string.IsNullOrEmpty(metadata.PushedAuthorizationRequestEndpoint));
         }
 
         private static X509Certificate2 GetDecryptionCertificate(IConfiguration configuration)

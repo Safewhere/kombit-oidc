@@ -25,7 +25,8 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Creates the proof that a fault asks for, or a correct proof for any other fault: ProofAlgNone (unsigned), ProofHmac
-        /// (HS256 with a random key), ProofSignatureOtherKey (the jwk of the key, signed with another key), or ProofWithoutJti.
+        /// (HS256 with a random key), ProofSignatureOtherKey (the jwk of the key, signed with another key), or a proof without
+        /// jti, htm, htu, or iat.
         /// </summary>
         public static string Create(Fault fault, DPoPKey key, string algorithm, string httpMethod, string httpUri, string accessToken = null, string nonce = null)
         {
@@ -45,7 +46,10 @@ namespace WebAppNetCore.OAuth
                     }
 
                 case Fault.ProofWithoutJti:
-                    claims.Remove("jti");
+                case Fault.ProofWithoutHtm:
+                case Fault.ProofWithoutHtu:
+                case Fault.ProofWithoutIat:
+                    claims.Remove(OmittedClaim(fault));
                     return Sign(key.SecurityKey, key, algorithm, claims);
 
                 case Fault.ProofWrongHtm:
@@ -87,6 +91,14 @@ namespace WebAppNetCore.OAuth
         }
 
         private static string ChangeUri(string uri, Func<Uri, string> change) => change(new Uri(uri));
+
+        private static string OmittedClaim(Fault fault) => fault switch
+        {
+            Fault.ProofWithoutHtm => "htm",
+            Fault.ProofWithoutHtu => "htu",
+            Fault.ProofWithoutIat => "iat",
+            _ => "jti"
+        };
 
         private static Dictionary<string, object> Claims(string httpMethod, string httpUri, string accessToken, string nonce)
         {

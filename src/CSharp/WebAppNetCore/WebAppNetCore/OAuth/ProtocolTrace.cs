@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Tokens;
 
 namespace WebAppNetCore.OAuth
@@ -60,7 +61,7 @@ namespace WebAppNetCore.OAuth
             string responseSummary,
             IEnumerable<KeyValuePair<string, string>> responseDetails = null)
         {
-            var details = new List<KeyValuePair<string, string>> { Detail("Request", request.Method + " " + request.RequestUri) };
+            var details = new List<KeyValuePair<string, string>> { Detail("Request", request.Method + " " + RedactQuery(request.RequestUri)) };
             if (request.Headers.Authorization != null)
             {
                 var credentials = string.Equals(request.Headers.Authorization.Scheme, "Basic", StringComparison.OrdinalIgnoreCase)
@@ -126,6 +127,20 @@ namespace WebAppNetCore.OAuth
             {
                 return json;
             }
+        }
+
+        /// <summary>
+        /// The request URI with the query values redacted as form values: the fault AccessTokenInQuery puts the access token there.
+        /// </summary>
+        private static string RedactQuery(Uri uri)
+        {
+            if (uri == null || string.IsNullOrEmpty(uri.Query))
+            {
+                return uri?.ToString();
+            }
+
+            var query = QueryHelpers.ParseQuery(uri.Query).Select(p => p.Key + "=" + RedactFormValue(p.Key, p.Value.ToString()));
+            return uri.GetLeftPart(UriPartial.Path) + "?" + string.Join("&", query);
         }
 
         private static string RedactFormValue(string name, string value)

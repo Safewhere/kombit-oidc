@@ -115,7 +115,27 @@ namespace WebAppNetCore.OAuth
         RevokeWithClientSecret,
 
         // Client credentials faults.
-        PasswordGrant
+        PasswordGrant,
+
+        // Sign-in faults: token proofs without a required claim, the client assertion of the pushed request at the token
+        // endpoint, and a client assertion with nbf in the future.
+        ProofWithoutHtm,
+        ProofWithoutHtu,
+        ProofWithoutIat,
+        ReplayParAssertionAtToken,
+        AssertionNbfFuture,
+
+        // UserInfo faults: forged, incomplete, or old proofs, and the access token in the query.
+        UserInfoProofAlgNone,
+        UserInfoProofSignatureOtherKey,
+        UserInfoProofWithoutJti,
+        UserInfoProofIatOld,
+        AccessTokenInQuery,
+
+        // Requests without client authentication at the introspection, revocation, and token endpoints.
+        IntrospectWithoutClientAuthentication,
+        RevokeWithoutClientAuthentication,
+        RefreshWithoutClientAuthentication
     }
 
     public static class FaultInjection
@@ -138,12 +158,13 @@ namespace WebAppNetCore.OAuth
             Fault.ProofWrongHtm, Fault.ProofHtuPathCase, Fault.ProofIatFuture, Fault.ProofIatOld, Fault.ProofTypJwt, Fault.ProofPrivateJwkMembers,
             Fault.TwoProofs, Fault.ProofHtuWithQuery, Fault.ProofHtuHostUpperCase, Fault.ProofIatRecent, Fault.ProofNbfFuture, Fault.WrongDPoPKeyThenRetry,
             Fault.AssertionWithoutJti, Fault.AssertionAndClientSecret, Fault.ClientIdNotSubject, Fault.WrongCodeVerifier,
-            Fault.RedeemCodeAfter10Seconds, Fault.RedeemCodeAfter5Seconds
+            Fault.RedeemCodeAfter10Seconds, Fault.RedeemCodeAfter5Seconds,
+            Fault.ProofWithoutHtm, Fault.ProofWithoutHtu, Fault.ProofWithoutIat, Fault.ReplayParAssertionAtToken, Fault.AssertionNbfFuture
         };
 
-        public static readonly Fault[] IntrospectionFaults = { Fault.IntrospectWithClientSecret };
+        public static readonly Fault[] IntrospectionFaults = { Fault.IntrospectWithClientSecret, Fault.IntrospectWithoutClientAuthentication };
 
-        public static readonly Fault[] RevocationFaults = { Fault.RevokeWithClientSecret };
+        public static readonly Fault[] RevocationFaults = { Fault.RevokeWithClientSecret, Fault.RevokeWithoutClientAuthentication };
 
         public static readonly Fault[] ClientCredentialsFaults = { Fault.PasswordGrant };
 
@@ -151,13 +172,15 @@ namespace WebAppNetCore.OAuth
         {
             Fault.BearerAtUserInfo, Fault.MissingAth, Fault.ReplayDPoPProof,
             Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth,
-            Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof
+            Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof,
+            Fault.UserInfoProofAlgNone, Fault.UserInfoProofSignatureOtherKey, Fault.UserInfoProofWithoutJti, Fault.UserInfoProofIatOld,
+            Fault.AccessTokenInQuery
         };
 
         public static readonly Fault[] RefreshFaults =
         {
             Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken,
-            Fault.NoDPoPProof, Fault.ReplayClientAssertion
+            Fault.NoDPoPProof, Fault.ReplayClientAssertion, Fault.RefreshWithoutClientAuthentication
         };
 
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
@@ -233,7 +256,20 @@ namespace WebAppNetCore.OAuth
             [Fault.AccessTokenInForm] = "A POST with the DPoP-bound access token in the access_token form parameter and a valid proof, without an Authorization header. Expected: HTTP 401 invalid_token.",
             [Fault.DPoPSchemeWithoutProof] = "The DPoP scheme with the DPoP-bound access token and no DPoP header. Expected: HTTP 401 invalid_dpop_proof.",
             [Fault.RevokeWithClientSecret] = "The revocation request with client_secret_post instead of the configured method. Expected: invalid_client.",
-            [Fault.PasswordGrant] = "A token request with grant_type password, a user name that does not exist, and a random password, instead of client credentials. Expected: unauthorized_client when the connection does not allow the password flow."
+            [Fault.PasswordGrant] = "A token request with grant_type password, a user name that does not exist, and a random password, instead of client credentials. Expected: unauthorized_client when the connection does not allow the password flow.",
+            [Fault.ProofWithoutHtm] = "A token proof without htm. Expected: invalid_dpop_proof.",
+            [Fault.ProofWithoutHtu] = "A token proof without htu. Expected: invalid_dpop_proof.",
+            [Fault.ProofWithoutIat] = "A token proof without iat. Expected: invalid_dpop_proof.",
+            [Fault.ReplayParAssertionAtToken] = "The token request of the code with the client assertion of the pushed request. Needs private_key_jwt and PAR. Expected: invalid_client, because the PAR endpoint used its jti.",
+            [Fault.AssertionNbfFuture] = "Client assertions with nbf 120 seconds in the future and iat now. Expected: invalid_client (verify).",
+            [Fault.UserInfoProofAlgNone] = "A UserInfo proof with the jwk of the DPoP key, alg none, and no signature. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.UserInfoProofSignatureOtherKey] = "A UserInfo proof with the jwk of the DPoP key, signed with another key. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.UserInfoProofWithoutJti] = "A UserInfo proof without jti. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.UserInfoProofIatOld] = "A UserInfo proof with iat 90 seconds in the past. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.AccessTokenInQuery] = "A GET with the DPoP-bound access token in the access_token query parameter and a valid proof, without an Authorization header. Expected: HTTP 401 invalid_token, or HTTP 400 invalid_request when UserInfo does not read the query (verify).",
+            [Fault.IntrospectWithoutClientAuthentication] = "The introspection request with client_id and no client authentication. Expected: invalid_client.",
+            [Fault.RevokeWithoutClientAuthentication] = "The revocation request with client_id and no client authentication. Expected: invalid_client.",
+            [Fault.RefreshWithoutClientAuthentication] = "The refresh request of a confidential client with client_id and no client authentication. Expected: invalid_client."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;
