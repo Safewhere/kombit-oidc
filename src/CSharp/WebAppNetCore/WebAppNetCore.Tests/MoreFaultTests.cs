@@ -355,6 +355,26 @@ public sealed class MoreFaultTests
         Assert.Contains("The revocation succeeded.", WebUtility.HtmlDecode(await client.GetStringAsync("/")));
     }
 
+    [Theory]
+    [InlineData("/Account/Introspect", "Introspection request")]
+    [InlineData("/Account/Revoke", "Revocation request")]
+    public async Task TheTraceOfIntrospectionAndRevocationHidesTheToken(string path, string step)
+    {
+        using var factory = new TestWebApplicationFactory(settings: Settings(dpop: true, par: false));
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        await SignInFlow.SignInAsync(client, factory);
+        var accessToken = (await TestSession.GetAsync(client)).Tokens["access_token"];
+
+        using var response = await SignInFlow.PostFormAsync(client, path);
+        var page = await client.GetStringAsync("/");
+
+        // The request has the token; the trace says only that it is there. The access token panel shows the token on purpose.
+        Assert.Equal(accessToken, Single(factory, path == "/Account/Introspect" ? StubIdentify.IntrospectionEndpoint : StubIdentify.RevocationEndpoint).Form["token"]);
+        Assert.Contains(step + ": HTTP 200", page);
+        Assert.Contains("<td>Form token</td><td><pre>(present)</pre></td>", page);
+        Assert.DoesNotContain("<td>Form token</td><td><pre>" + accessToken, page);
+    }
+
     [Fact]
     public async Task APublicClientSendsOnlyItsClientId()
     {

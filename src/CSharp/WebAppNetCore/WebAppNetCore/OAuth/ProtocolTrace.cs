@@ -134,11 +134,14 @@ namespace WebAppNetCore.OAuth
             {
                 case "client_secret":
                 case "code_verifier":
+                case "password":
                     return "(redacted)";
                 case "client_assertion":
                     return "(see Client assertion)";
                 case "code":
                 case "refresh_token":
+                case "access_token":
+                case "token": // the token of an introspection or revocation request
                     return "(present)";
                 case "state":
                     return "(protected authentication properties, " + value?.Length + " characters)";

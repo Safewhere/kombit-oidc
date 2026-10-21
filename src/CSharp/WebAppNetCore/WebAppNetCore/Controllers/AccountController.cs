@@ -138,7 +138,7 @@ namespace WebAppNetCore.Controllers
         // Revokes the access token of the session (RFC 7009). The session keeps the token, so UserInfo shows the revocation.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Revoke([FromServices] TokenManagementClient tokenManagementClient, [FromServices] ClientSessionStore sessionStore)
+        public async Task<IActionResult> Revoke([FromServices] TokenManagementClient tokenManagementClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
         {
             var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             if (!result.Succeeded)
@@ -149,7 +149,10 @@ namespace WebAppNetCore.Controllers
             try
             {
                 await tokenManagementClient.RevokeAsync(
-                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken), sessionStore.Get(result.Properties), HttpContext.RequestAborted);
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
+                    sessionStore.Get(result.Properties),
+                    FaultInjection.Parse(fault, configuration, FaultInjection.RevocationFaults),
+                    HttpContext.RequestAborted);
                 TempData[ProtocolViewModel.ResultKey] = "The revocation succeeded. The session keeps the revoked access token.";
             }
             catch (OAuthClientException exception)
@@ -162,19 +165,22 @@ namespace WebAppNetCore.Controllers
 
         // POST: /Account/ClientCredentials
         // Gets a token with the client credentials grant, without a sign-in. With DPoP:BindAccessTokens, the request has a proof of a new key.
+        // The fault PasswordGrant sends a password grant instead.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ClientCredentials([FromServices] TokenClient tokenClient)
+        public async Task<IActionResult> ClientCredentials([FromServices] TokenClient tokenClient, [FromForm] string fault)
         {
             using var dpopKey = configuration.DPoPBindAccessTokens() ? DPoPKey.Create() : null;
+            var grantFault = FaultInjection.Parse(fault, configuration, FaultInjection.ClientCredentialsFaults);
             try
             {
-                var response = await tokenClient.ClientCredentialsAsync(dpopKey, HttpContext.RequestAborted);
+                var response = await tokenClient.ClientCredentialsAsync(dpopKey, grantFault, HttpContext.RequestAborted);
                 var jkt = AccessTokenInspector.ReadConfirmationThumbprint(response.AccessToken);
                 var bound = dpopKey != null && jkt == dpopKey.Thumbprint;
                 TempData[ProtocolViewModel.ResultKey] = string.Format(
                     CultureInfo.InvariantCulture,
-                    "The client credentials request succeeded: token_type {0}, expires_in {1}, scope {2}, cnf.jkt {3}, Bound to the key: {4}.",
+                    "The {0} request succeeded: token_type {1}, expires_in {2}, scope {3}, cnf.jkt {4}, Bound to the key: {5}.",
+                    grantFault == Fault.PasswordGrant ? "password grant" : "client credentials",
                     response.TokenType, response.ExpiresIn ?? "(none)", string.IsNullOrEmpty(response.Scope) ? "(none)" : response.Scope, jkt ?? "(none)", bound ? "Yes" : "No");
             }
             catch (OAuthClientException exception)

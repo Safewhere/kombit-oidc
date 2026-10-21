@@ -185,7 +185,7 @@ The sample keeps the DPoP key and the trace in memory, for one application insta
 
 ## Fault injection
 
-With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh forms get a fault list. A fault is one deliberate protocol violation in the next request of that action. The expected results come from section 5 of the Identify design; "verify" marks a result that the design does not state.
+With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Introspect, Revoke, and client credentials forms get a fault list. A fault is one deliberate protocol violation in the next request of that action. The expected results come from section 5 of the Identify design; "verify" marks a result that the design does not state.
 
 | Fault | Action | Change | Expected Identify result |
 |---|---|---|---|
@@ -199,9 +199,9 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | `WrongHtu` | Sign in | A token proof with the authorization endpoint as `htu` | `invalid_dpop_proof` |
 | `SmallDPoPKey` | Sign in | A token proof of an RSA 1024 key | `invalid_dpop_proof` |
 | `RedeemCodeTwice` | Sign in | A second redemption after a successful one | `invalid_grant` for the second. Identify then revokes the tokens of the first redemption (RFC 6749 section 4.1.2), so the sign-in stops at UserInfo with `invalid_token`. With a server that does not revoke them, the sign-in continues and the trace shows the second response |
-| `BearerAtUserInfo` | Call UserInfo | The Bearer scheme with a DPoP-bound token | `invalid_token` |
-| `MissingAth` | Call UserInfo | A proof without `ath` | `invalid_token` |
-| `ReplayDPoPProof` | Call UserInfo | The same proof in two calls | `invalid_token` for the second call |
+| `BearerAtUserInfo` | Call UserInfo | The Bearer scheme with a DPoP-bound token | HTTP 401 `invalid_token` |
+| `MissingAth` | Call UserInfo | A proof without `ath` | HTTP 401 `invalid_dpop_proof` |
+| `ReplayDPoPProof` | Call UserInfo | The same proof in two calls | HTTP 401 `invalid_dpop_proof` for the second call |
 | `NewDPoPKeyOnRefresh` | Refresh | A new key for the refresh request | Success; the new access token has a new `cnf.jkt` |
 | `ParWithoutClientAuthentication` | Sign in | A pushed request with `client_id` and no client authentication | `invalid_client` |
 | `ParRedirectUriExtraPath` | Sign in | The pushed `redirect_uri` with an extra path segment `/x` | `invalid_request` (RFC 9700 section 2.1: exact matching) |
@@ -219,10 +219,10 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | `RedeemAsOtherClient` | Sign in | The token request of the code as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | `invalid_grant`: the code belongs to another client |
 | `MissingCodeVerifier` | Sign in | A token request without `code_verifier` | `invalid_grant` (verify) |
 | `TokenRedirectUriMismatch` | Sign in | A token request with `redirect_uri` `/other-callback` on the same origin | `invalid_grant` |
-| `UserInfoProofOtherKey` | Call UserInfo | A valid proof of a new key, not the key of the access token | `invalid_token` (verify) |
-| `UserInfoProofWrongHtm` | Call UserInfo | A proof with `htm` `POST` | `invalid_token` (verify) |
-| `UserInfoProofWrongHtu` | Call UserInfo | A proof with the token endpoint as `htu` | `invalid_token` (verify) |
-| `UserInfoProofWrongAth` | Call UserInfo | A proof with the `ath` of another access token value | `invalid_token` (verify) |
+| `UserInfoProofOtherKey` | Call UserInfo | A valid proof of a new key, not the key of the access token | HTTP 401 `invalid_dpop_proof` |
+| `UserInfoProofWrongHtm` | Call UserInfo | A proof with `htm` `POST` | HTTP 401 `invalid_dpop_proof` |
+| `UserInfoProofWrongHtu` | Call UserInfo | A proof with the token endpoint as `htu` | HTTP 401 `invalid_dpop_proof` |
+| `UserInfoProofWrongAth` | Call UserInfo | A proof with the `ath` of another access token value | HTTP 401 `invalid_dpop_proof` |
 | `ReplayDPoPProofOnRefresh` | Refresh | Two refresh requests with the same proof; the result is the second | `invalid_dpop_proof` for the second (verify) |
 | `RefreshAsOtherClient` | Refresh | The refresh request as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | `invalid_grant`: the refresh token belongs to another client |
 | `ReuseRotatedRefreshToken` | Refresh | A refresh that rotates the refresh token, then a refresh with the old one. The sample keeps the new refresh token. Needs a connection that rotates | `invalid_grant` for the old refresh token |
@@ -256,6 +256,11 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, and Refresh for
 | `IntrospectWithClientSecret` | Introspect | The introspection request with `client_secret_post` instead of the configured method | `invalid_client` |
 | `NoDPoPProof` | Refresh | No proof in the refresh request | `invalid_dpop_proof` when DPoP is required |
 | `ReplayClientAssertion` | Refresh | Two refresh requests with the same client assertion; the result is the second | `invalid_client` for the second |
+| `DPoPSchemeForBearerToken` | Call UserInfo | An access token without `cnf.jkt` with the DPoP scheme and a valid proof of a new key. Needs `DPoP:BindAccessTokens=false` | HTTP 401 `invalid_token` |
+| `AccessTokenInForm` | Call UserInfo | A POST with the DPoP-bound access token in the `access_token` form parameter and a valid proof, without an `Authorization` header | HTTP 401 `invalid_token` |
+| `DPoPSchemeWithoutProof` | Call UserInfo | The DPoP scheme with the DPoP-bound access token and no `DPoP` header | HTTP 401 `invalid_dpop_proof` |
+| `RevokeWithClientSecret` | Revoke | The revocation request with `client_secret_post` instead of the configured method | `invalid_client` |
+| `PasswordGrant` | Get client credentials token | A token request with `grant_type` `password`, a user name that does not exist, and a random password | `unauthorized_client` when the connection does not allow the password flow |
 
 Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 

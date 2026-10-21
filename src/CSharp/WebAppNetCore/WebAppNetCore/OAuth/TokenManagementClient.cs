@@ -41,11 +41,14 @@ namespace WebAppNetCore.OAuth
             return ProtocolTrace.FormatJson(body);
         }
 
-        public async Task RevokeAsync(string accessToken, ClientSession session, CancellationToken cancellationToken)
+        /// <summary>
+        /// Revokes the access token. RevokeWithClientSecret authenticates with client_secret_post instead of the configured method.
+        /// </summary>
+        public async Task RevokeAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var endpoint = IdentifyMetadata.RequireEndpoint(metadata.RevocationEndpoint, "revocation_endpoint");
-            using var response = await SendAsync("Revocation request", "revocation endpoint", endpoint, accessToken, session, Fault.None, metadata, cancellationToken);
+            using var response = await SendAsync("Revocation request", "revocation endpoint", endpoint, accessToken, session, fault, metadata, cancellationToken);
         }
 
         private async Task<HttpResponseMessage> SendAsync(
@@ -54,7 +57,7 @@ namespace WebAppNetCore.OAuth
             var parameters = new Dictionary<string, string> { { "token", accessToken }, { "token_type_hint", "access_token" } };
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             string clientAssertion = null;
-            if (fault == Fault.IntrospectWithClientSecret)
+            if (fault == Fault.IntrospectWithClientSecret || fault == Fault.RevokeWithClientSecret)
             {
                 parameters["client_id"] = configuration.ClientId();
                 parameters["client_secret"] = configuration.ClientSecret();

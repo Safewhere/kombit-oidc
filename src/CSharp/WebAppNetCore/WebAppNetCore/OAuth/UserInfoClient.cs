@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
@@ -44,67 +46,106 @@ namespace WebAppNetCore.OAuth
                 return null;
             }
 
+            var boundToken = string.Equals(tokenType, "DPoP", StringComparison.OrdinalIgnoreCase);
+            RequireTokenTypeOfFault(fault, boundToken);
             DPoPKey dpopKey = null;
-            if (string.Equals(tokenType, "DPoP", StringComparison.OrdinalIgnoreCase) && fault != Fault.BearerAtUserInfo)
+            if (boundToken && fault != Fault.BearerAtUserInfo)
             {
                 dpopKey = session?.DPoPKey ?? throw new OAuthClientException(
                     "The access token is bound to a DPoP key, but the key of this sign-in is no longer available, for example after a restart. Sign in again.");
             }
 
             // UserInfoProofOtherKey signs a valid proof with a new key: the use of the access token by another key holder.
-            using var otherKey = dpopKey != null && fault == Fault.UserInfoProofOtherKey ? DPoPKey.Create() : null;
+            // DPoPSchemeForBearerToken sends a token without cnf.jkt with the DPoP scheme and a valid proof of a new key.
+            using var newKey = (dpopKey != null && fault == Fault.UserInfoProofOtherKey) || fault == Fault.DPoPSchemeForBearerToken ? DPoPKey.Create() : null;
+            var proofKey = newKey ?? dpopKey;
             var server = DPoPNonceStore.ResourceServer(userInfoEndpoint);
             string replayedProof = null;
             for (var attempt = 1; ; attempt++)
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, userInfoEndpoint);
+                // AccessTokenInForm sends the token in the access_token parameter of a form POST (RFC 6750 section 2.2).
+                var form = fault == Fault.AccessTokenInForm ? new Dictionary<string, string> { ["access_token"] = accessToken } : null;
+                using var request = new HttpRequestMessage(form == null ? HttpMethod.Get : HttpMethod.Post, userInfoEndpoint);
                 string proof = null;
-                if (dpopKey != null)
+                if (proofKey != null && fault != Fault.DPoPSchemeWithoutProof)
                 {
-                    proof = replayedProof ?? CreateProof(fault, otherKey ?? dpopKey, userInfoEndpoint, metadata.TokenEndpoint, accessToken, dpopNonces.Get(server));
-                    request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
+                    proof = replayedProof ?? CreateProof(fault, proofKey, request.Method.Method, userInfoEndpoint, metadata.TokenEndpoint, accessToken, dpopNonces.Get(server));
                     request.Headers.Add("DPoP", proof);
+                }
+
+                if (form != null)
+                {
+                    request.Content = new FormUrlEncodedContent(form);
                 }
                 else
                 {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                    request.Headers.Authorization = new AuthenticationHeaderValue(proofKey != null ? "DPoP" : "Bearer", accessToken);
                 }
 
                 using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
                 dpopNonces.Save(server, response);
                 if (fault == Fault.ReplayDPoPProof && proof != null && replayedProof == null)
                 {
-                    session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, "fault ReplayDPoPProof: the next call sends the same proof");
+                    session?.Trace.AddExchange(Step, request, form, null, (int)response.StatusCode, "fault ReplayDPoPProof: the next call sends the same proof");
                     replayedProof = proof;
                     continue;
                 }
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var challengedNonce = dpopKey != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
+                    var challengedNonce = proof != null && attempt == 1 ? await DPoPNonce.ReadChallengeAsync(response) : null;
                     if (challengedNonce != null)
                     {
-                        session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
+                        session?.Trace.AddExchange(Step, request, form, null, (int)response.StatusCode, "use_dpop_nonce: retry with the server nonce");
                         continue;
                     }
 
                     var error = await OAuthErrorResponseException.CreateAsync("UserInfo endpoint", response);
-                    session?.Trace.AddExchange(Step, request, null, null, error.StatusCode, error.Error + " " + error.ErrorDescription);
+                    session?.Trace.AddExchange(Step, request, form, null, error.StatusCode, error.Error + " " + error.ErrorDescription, ChallengeDetails(response));
                     throw error;
                 }
 
                 var userInfo = await ReadResponseAsync(response, cancellationToken);
-                session?.Trace.AddExchange(Step, request, null, null, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType);
+                session?.Trace.AddExchange(Step, request, form, null, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType);
                 return userInfo;
             }
         }
 
         /// <summary>
-        /// The UserInfo proof, changed by MissingAth, UserInfoProofWrongHtm, UserInfoProofWrongHtu, or UserInfoProofWrongAth.
+        /// A fault that changes how a DPoP-bound token is sent needs such a token, and DPoPSchemeForBearerToken needs a token
+        /// without the binding. Otherwise the request would be a valid one, and the result would look like an accepted violation.
         /// </summary>
-        private string CreateProof(Fault fault, DPoPKey key, string userInfoEndpoint, string tokenEndpoint, string accessToken, string nonce)
+        private static void RequireTokenTypeOfFault(Fault fault, bool boundToken)
         {
-            var method = fault == Fault.UserInfoProofWrongHtm ? "POST" : "GET";
+            if ((fault == Fault.AccessTokenInForm || fault == Fault.DPoPSchemeWithoutProof) && !boundToken)
+            {
+                throw new OAuthClientException(
+                    "The fault " + fault + " needs a DPoP-bound access token: sign in with DPoP:BindAccessTokens=true. The UserInfo request was not sent.");
+            }
+
+            if (fault == Fault.DPoPSchemeForBearerToken && boundToken)
+            {
+                throw new OAuthClientException(
+                    "The fault DPoPSchemeForBearerToken needs an access token that is not bound to a DPoP key: sign in with DPoP:BindAccessTokens=false. The UserInfo request was not sent.");
+            }
+        }
+
+        /// <summary>
+        /// The WWW-Authenticate challenges of an error response, for the trace: RFC 9449 section 7.1 has the DPoP scheme and
+        /// the algs parameter.
+        /// </summary>
+        private static IEnumerable<KeyValuePair<string, string>> ChallengeDetails(HttpResponseMessage response)
+        {
+            return response.Headers.WwwAuthenticate.Select(challenge => ProtocolTrace.Detail("WWW-Authenticate", challenge.ToString()));
+        }
+
+        /// <summary>
+        /// The UserInfo proof for the HTTP method of the request, changed by MissingAth, UserInfoProofWrongHtm,
+        /// UserInfoProofWrongHtu, or UserInfoProofWrongAth.
+        /// </summary>
+        private string CreateProof(Fault fault, DPoPKey key, string httpMethod, string userInfoEndpoint, string tokenEndpoint, string accessToken, string nonce)
+        {
+            var method = fault == Fault.UserInfoProofWrongHtm ? "POST" : httpMethod;
             var htu = fault == Fault.UserInfoProofWrongHtu ? IdentifyMetadata.RequireEndpoint(tokenEndpoint, "token_endpoint") : userInfoEndpoint;
             var athToken = fault switch
             {

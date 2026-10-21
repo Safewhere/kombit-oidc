@@ -104,7 +104,18 @@ namespace WebAppNetCore.OAuth
         NewDPoPKeyOnRefresh,
         ReplayDPoPProofOnRefresh,
         RefreshAsOtherClient,
-        ReuseRotatedRefreshToken
+        ReuseRotatedRefreshToken,
+
+        // UserInfo faults: the scheme and the place of the access token.
+        DPoPSchemeForBearerToken,
+        AccessTokenInForm,
+        DPoPSchemeWithoutProof,
+
+        // Revocation faults.
+        RevokeWithClientSecret,
+
+        // Client credentials faults.
+        PasswordGrant
     }
 
     public static class FaultInjection
@@ -132,10 +143,15 @@ namespace WebAppNetCore.OAuth
 
         public static readonly Fault[] IntrospectionFaults = { Fault.IntrospectWithClientSecret };
 
+        public static readonly Fault[] RevocationFaults = { Fault.RevokeWithClientSecret };
+
+        public static readonly Fault[] ClientCredentialsFaults = { Fault.PasswordGrant };
+
         public static readonly Fault[] UserInfoFaults =
         {
             Fault.BearerAtUserInfo, Fault.MissingAth, Fault.ReplayDPoPProof,
-            Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth
+            Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth,
+            Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof
         };
 
         public static readonly Fault[] RefreshFaults =
@@ -156,9 +172,9 @@ namespace WebAppNetCore.OAuth
             [Fault.WrongHtu] = "A token proof with the authorization endpoint as htu. Expected: invalid_dpop_proof.",
             [Fault.SmallDPoPKey] = "A token proof of an RSA 1024 key. Expected: invalid_dpop_proof.",
             [Fault.RedeemCodeTwice] = "A second redemption of the code after a successful one. Expected: invalid_grant for the second; Identify then revokes the tokens of the code, so the sign-in fails at UserInfo with invalid_token.",
-            [Fault.BearerAtUserInfo] = "The Bearer scheme with a DPoP-bound token. Expected: invalid_token.",
-            [Fault.MissingAth] = "A UserInfo proof without ath. Expected: invalid_token.",
-            [Fault.ReplayDPoPProof] = "The same UserInfo proof in two calls. Expected: invalid_token for the second call.",
+            [Fault.BearerAtUserInfo] = "The Bearer scheme with a DPoP-bound token. Expected: HTTP 401 invalid_token.",
+            [Fault.MissingAth] = "A UserInfo proof without ath. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.ReplayDPoPProof] = "The same UserInfo proof in two calls. Expected: HTTP 401 invalid_dpop_proof for the second call.",
             [Fault.NewDPoPKeyOnRefresh] = "A new DPoP key for the refresh request. Expected: success, and the new access token has a new cnf.jkt.",
             [Fault.ParWithoutClientAuthentication] = "A pushed request with client_id and no client authentication. Expected: invalid_client.",
             [Fault.ParRedirectUriExtraPath] = "The registered redirect URI with an extra path segment /x in the pushed request. Expected: invalid_request.",
@@ -176,10 +192,10 @@ namespace WebAppNetCore.OAuth
             [Fault.RedeemAsOtherClient] = "The token request of the code as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: invalid_grant.",
             [Fault.MissingCodeVerifier] = "A token request without code_verifier. Expected: invalid_grant (verify).",
             [Fault.TokenRedirectUriMismatch] = "A token request with redirect_uri /other-callback instead of the redirect URI of the authorization request. Expected: invalid_grant.",
-            [Fault.UserInfoProofOtherKey] = "A valid UserInfo proof of a new key, not the key of the access token. Expected: invalid_token (verify).",
-            [Fault.UserInfoProofWrongHtm] = "A UserInfo proof with htm POST for a GET request. Expected: invalid_token (verify).",
-            [Fault.UserInfoProofWrongHtu] = "A UserInfo proof with the token endpoint as htu. Expected: invalid_token (verify).",
-            [Fault.UserInfoProofWrongAth] = "A UserInfo proof with the ath of another access token value. Expected: invalid_token (verify).",
+            [Fault.UserInfoProofOtherKey] = "A valid UserInfo proof of a new key, not the key of the access token. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.UserInfoProofWrongHtm] = "A UserInfo proof with htm POST for a GET request. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.UserInfoProofWrongHtu] = "A UserInfo proof with the token endpoint as htu. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.UserInfoProofWrongAth] = "A UserInfo proof with the ath of another access token value. Expected: HTTP 401 invalid_dpop_proof.",
             [Fault.ReplayDPoPProofOnRefresh] = "Two refresh requests with the same proof; the result is the second. Expected: invalid_dpop_proof for the second (verify).",
             [Fault.RefreshAsOtherClient] = "The refresh request as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: invalid_grant.",
             [Fault.ParMissingCodeChallenge] = "A pushed request without code_challenge. Expected: invalid_request.",
@@ -212,7 +228,12 @@ namespace WebAppNetCore.OAuth
             [Fault.RedeemCodeAfter5Seconds] = "The sample waits 5 seconds before it redeems the code. Expected: success when the code lifetime is longer.",
             [Fault.IntrospectWithClientSecret] = "The introspection request with client_secret_post instead of the configured method. Expected: invalid_client.",
             [Fault.ReplayClientAssertion] = "Two refresh requests with the same client assertion; the result is the second. Expected: invalid_client for the second.",
-            [Fault.ReuseRotatedRefreshToken] = "A refresh that rotates the refresh token, then a refresh with the old one. Needs a connection that rotates. Expected: invalid_grant for the old one."
+            [Fault.ReuseRotatedRefreshToken] = "A refresh that rotates the refresh token, then a refresh with the old one. Needs a connection that rotates. Expected: invalid_grant for the old one.",
+            [Fault.DPoPSchemeForBearerToken] = "An access token without cnf.jkt with the DPoP scheme and a valid proof of a new key. Needs DPoP:BindAccessTokens=false. Expected: HTTP 401 invalid_token.",
+            [Fault.AccessTokenInForm] = "A POST with the DPoP-bound access token in the access_token form parameter and a valid proof, without an Authorization header. Expected: HTTP 401 invalid_token.",
+            [Fault.DPoPSchemeWithoutProof] = "The DPoP scheme with the DPoP-bound access token and no DPoP header. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.RevokeWithClientSecret] = "The revocation request with client_secret_post instead of the configured method. Expected: invalid_client.",
+            [Fault.PasswordGrant] = "A token request with grant_type password, a user name that does not exist, and a random password, instead of client credentials. Expected: unauthorized_client when the connection does not allow the password flow."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

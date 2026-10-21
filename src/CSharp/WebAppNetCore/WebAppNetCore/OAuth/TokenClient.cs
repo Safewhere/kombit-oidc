@@ -82,14 +82,27 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// A client credentials grant (RFC 6749 section 4.4) without a sign-in, with a proof of the given key when it is not null.
+        /// PasswordGrant sends a password grant (RFC 6749 section 4.3) instead, with a user name that does not exist and a
+        /// random password, so that no account is used and only the grant type decides the result.
         /// </summary>
-        public async Task<OpenIdConnectMessage> ClientCredentialsAsync(DPoPKey dpopKey, CancellationToken cancellationToken)
+        public async Task<OpenIdConnectMessage> ClientCredentialsAsync(DPoPKey dpopKey, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var tokenEndpoint = IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
-            var parameters = new Dictionary<string, string> { { "grant_type", "client_credentials" } };
-            return await SendAsync("Token request (client credentials)", parameters, null, Fault.None, metadata, tokenEndpoint, dpopKey, tokenEndpoint, cancellationToken);
+            var parameters = fault == Fault.PasswordGrant
+                ? new Dictionary<string, string>
+                {
+                    { "grant_type", "password" },
+                    { "username", PasswordGrantUserName },
+                    { "password", Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32)) }
+                }
+                : new Dictionary<string, string> { { "grant_type", "client_credentials" } };
+            var step = fault == Fault.PasswordGrant ? "Token request (password)" : "Token request (client credentials)";
+            return await SendAsync(step, parameters, null, Fault.None, metadata, tokenEndpoint, dpopKey, tokenEndpoint, cancellationToken);
         }
+
+        /// <summary>The user name of the fault PasswordGrant. No test user has it.</summary>
+        public const string PasswordGrantUserName = "fapi-fault-no-such-user";
 
         private async Task<OpenIdConnectMessage> SendAsync(
             string step, Dictionary<string, string> grantParameters, ClientSession session, Fault fault, CancellationToken cancellationToken)

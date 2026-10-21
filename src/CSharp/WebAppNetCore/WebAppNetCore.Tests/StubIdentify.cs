@@ -68,6 +68,8 @@ internal sealed class StubIdentify : HttpMessageHandler
 
     internal Func<RecordedRequest, HttpResponseMessage>? IntrospectionResponder { get; set; }
 
+    internal Func<RecordedRequest, HttpResponseMessage>? RevocationResponder { get; set; }
+
     internal IReadOnlyList<RecordedRequest> Requests
     {
         get
@@ -140,7 +142,7 @@ internal sealed class StubIdentify : HttpMessageHandler
             TokenEndpoint => (TokenResponder ?? DefaultTokenResponse)(recorded),
             UserInfoEndpoint => (UserInfoResponder ?? DefaultUserInfoResponse)(recorded),
             IntrospectionEndpoint => (IntrospectionResponder ?? DefaultIntrospectionResponse)(recorded),
-            RevocationEndpoint => new HttpResponseMessage(HttpStatusCode.OK),
+            RevocationEndpoint => RevocationResponder?.Invoke(recorded) ?? new HttpResponseMessage(HttpStatusCode.OK),
             _ => throw new InvalidOperationException($"Unexpected request to the stub Identify: {request.Method} {request.RequestUri}")
         };
     }

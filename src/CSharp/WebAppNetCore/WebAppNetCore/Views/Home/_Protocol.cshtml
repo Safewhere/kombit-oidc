@@ -81,6 +81,10 @@
                 <button type="submit" class="btn btn-primary">Introspect access token</button>
             </form>
             <form method="post" asp-controller="Account" asp-action="Revoke">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.RevocationFaults" />
+                }
                 <button type="submit" class="btn btn-primary">Revoke access token</button>
             </form>
         </div>
@@ -131,6 +135,10 @@
     <h4 class="alert-heading">Client credentials</h4>
     <p>A token for the client itself (RFC 6749 section 4.4), without a sign-in. Use it with a connection that allows the client credentials flow.</p>
     <form method="post" asp-controller="Account" asp-action="ClientCredentials">
+        @if (Model.FaultInjectionEnabled)
+        {
+            <partial name="_FaultSelect" model="FaultInjection.ClientCredentialsFaults" />
+        }
         <button type="submit" class="btn btn-primary">Get client credentials token</button>
     </form>
 </div>
