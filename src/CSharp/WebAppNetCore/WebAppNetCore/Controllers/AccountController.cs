@@ -82,14 +82,26 @@ namespace WebAppNetCore.Controllers
             }
 
             var session = sessionStore.Get(result.Properties);
+            var userInfoFault = FaultInjection.Parse(fault, configuration, FaultInjection.UserInfoFaults);
+            var accessToken = result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken);
+            var tokenType = result.Properties.GetTokenValue("token_type");
+            if (userInfoFault == Fault.IdTokenAtUserInfo)
+            {
+                // A token substitution: the ID token of the sign-in as a bearer access token.
+                accessToken = result.Properties.GetTokenValue(OpenIdConnectConstants.IdToken);
+                tokenType = "Bearer";
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    TempData[ProtocolViewModel.ResultKey] = "The fault IdTokenAtUserInfo needs the ID token of the sign-in. The UserInfo request was not sent.";
+                    return RedirectToAction(nameof(HomeController.Index), "Home");
+                }
+
+                session?.Trace.Add("Fault injection", "IdTokenAtUserInfo: the UserInfo request sends the ID token of the sign-in with the Bearer scheme");
+            }
+
             try
             {
-                var userInfo = await userInfoClient.GetAsync(
-                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
-                    result.Properties.GetTokenValue("token_type"),
-                    session,
-                    FaultInjection.Parse(fault, configuration, FaultInjection.UserInfoFaults),
-                    HttpContext.RequestAborted);
+                var userInfo = await userInfoClient.GetAsync(accessToken, tokenType, session, userInfoFault, HttpContext.RequestAborted);
                 if (userInfo != null && session != null)
                 {
                     session.LastUserInfo = ProtocolTrace.FormatJson(userInfo.Json);

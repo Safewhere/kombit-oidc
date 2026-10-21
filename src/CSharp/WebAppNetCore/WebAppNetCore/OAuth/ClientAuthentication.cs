@@ -116,6 +116,11 @@ namespace WebAppNetCore.OAuth
             var keyId = Base64UrlEncoder.Encode(cert.GetCertHash());
             switch (fault)
             {
+                case Fault.AssertionHeaderJwk:
+                case Fault.AssertionHeaderX5c:
+                case Fault.AssertionHeaderJku:
+                    return CreateAssertionWithHeaderKey(fault, claims);
+
                 case Fault.AssertionAlgNone:
                     return FaultJwt.Unsigned(new Dictionary<string, object> { ["typ"] = "JWT", ["kid"] = keyId }, claims);
 
@@ -152,6 +157,54 @@ namespace WebAppNetCore.OAuth
             // exp, and AssertionNbfFuture keeps its nbf.
             var defaultTimes = fault != Fault.AssertionWithoutExp && fault != Fault.AssertionExpired && fault != Fault.AssertionNbfFuture;
             return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = defaultTimes }.CreateToken(tokenDescriptor);
+        }
+
+        /// <summary>The jku of the fault AssertionHeaderJku: a host that does not exist (RFC 2606), so that nothing can be fetched.</summary>
+        public const string HeaderJkuUrl = "https://jku.invalid/jwks.json";
+
+        /// <summary>
+        /// A client assertion signed with a new key that is not in the JWKS of the client, without kid, and with the new key in the
+        /// header: as jwk (AssertionHeaderJwk), as a self-signed certificate in x5c (AssertionHeaderX5c), or as a jku URL
+        /// (AssertionHeaderJku). A server must take the key of a client assertion only from the registered JWKS.
+        /// </summary>
+        private string CreateAssertionWithHeaderKey(Fault fault, Dictionary<string, object> claims)
+        {
+            using var rsa = RSA.Create(2048);
+            var header = new Dictionary<string, object>();
+            switch (fault)
+            {
+                case Fault.AssertionHeaderJwk:
+                    var parameters = rsa.ExportParameters(false);
+                    header["jwk"] = new Dictionary<string, object>
+                    {
+                        ["kty"] = "RSA",
+                        ["n"] = Base64UrlEncoder.Encode(parameters.Modulus),
+                        ["e"] = Base64UrlEncoder.Encode(parameters.Exponent)
+                    };
+                    break;
+
+                case Fault.AssertionHeaderX5c:
+                    var request = new CertificateRequest("CN=fapi-fault-header-key", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                    using (var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1)))
+                    {
+                        header["x5c"] = new[] { Convert.ToBase64String(certificate.RawData) };
+                    }
+
+                    break;
+
+                default:
+                    header["jku"] = HeaderJkuUrl;
+                    break;
+            }
+
+            // A key without KeyId, so that the header has no kid.
+            var descriptor = new SecurityTokenDescriptor
+            {
+                Claims = claims,
+                SigningCredentials = new SigningCredentials(new RsaSecurityKey(rsa), configuration.ClientAssertionSigningAlgorithm()),
+                AdditionalHeaderClaims = header
+            };
+            return new JsonWebTokenHandler().CreateToken(descriptor);
         }
 
         private X509Certificate2 JwtAssertionSigningCertificate()

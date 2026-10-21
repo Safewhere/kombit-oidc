@@ -30,7 +30,8 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Introspects the access token and returns the response as indented JSON. IntrospectWithClientSecret authenticates with
-        /// client_secret_post instead of the configured method, and IntrospectWithoutClientAuthentication sends only client_id.
+        /// client_secret_post instead of the configured method, IntrospectWithoutClientAuthentication sends only client_id, and
+        /// IntrospectAsOtherClient authenticates as Testing:OtherClientId.
         /// </summary>
         public async Task<string> IntrospectAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
@@ -43,7 +44,7 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Revokes the access token. RevokeWithClientSecret authenticates with client_secret_post instead of the configured method,
-        /// and RevokeWithoutClientAuthentication sends only client_id.
+        /// RevokeWithoutClientAuthentication sends only client_id, and RevokeAsOtherClient authenticates as Testing:OtherClientId.
         /// </summary>
         public async Task RevokeAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
@@ -62,6 +63,18 @@ namespace WebAppNetCore.OAuth
             {
                 parameters["client_id"] = configuration.ClientId();
                 parameters["client_secret"] = configuration.ClientSecret();
+            }
+            else if (fault == Fault.IntrospectAsOtherClient || fault == Fault.RevokeAsOtherClient)
+            {
+                // Another client with the client key: only private_key_jwt can authenticate as it, because the sample has no
+                // secret of the other client. Otherwise the request would fail for the credentials, not for the token.
+                if (configuration.TokenAuthnMethod() != "private_key_jwt")
+                {
+                    throw new OAuthClientException(
+                        "The fault " + fault + " needs TokenAuthnMethod private_key_jwt and another connection with the same client keys in Testing:OtherClientId. The request was not sent.");
+                }
+
+                clientAssertion = clientAuthentication.Apply(request, parameters, metadata, fault, configuration.OtherClientId());
             }
             else
             {

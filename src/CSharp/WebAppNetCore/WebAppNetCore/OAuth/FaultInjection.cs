@@ -135,7 +135,19 @@ namespace WebAppNetCore.OAuth
         // Requests without client authentication at the introspection, revocation, and token endpoints.
         IntrospectWithoutClientAuthentication,
         RevokeWithoutClientAuthentication,
-        RefreshWithoutClientAuthentication
+        RefreshWithoutClientAuthentication,
+
+        // Substituted and injected values: the ID token at UserInfo, a scope that was not granted, another client at
+        // introspection and revocation, browser parameters next to request_uri, and keys in the client assertion header.
+        IdTokenAtUserInfo,
+        RefreshWiderScope,
+        IntrospectAsOtherClient,
+        RevokeAsOtherClient,
+        ExtraBrowserRedirectUri,
+        BrowserWithoutClientId,
+        AssertionHeaderJwk,
+        AssertionHeaderX5c,
+        AssertionHeaderJku
     }
 
     public static class FaultInjection
@@ -159,12 +171,19 @@ namespace WebAppNetCore.OAuth
             Fault.TwoProofs, Fault.ProofHtuWithQuery, Fault.ProofHtuHostUpperCase, Fault.ProofIatRecent, Fault.ProofNbfFuture, Fault.WrongDPoPKeyThenRetry,
             Fault.AssertionWithoutJti, Fault.AssertionAndClientSecret, Fault.ClientIdNotSubject, Fault.WrongCodeVerifier,
             Fault.RedeemCodeAfter10Seconds, Fault.RedeemCodeAfter5Seconds,
-            Fault.ProofWithoutHtm, Fault.ProofWithoutHtu, Fault.ProofWithoutIat, Fault.ReplayParAssertionAtToken, Fault.AssertionNbfFuture
+            Fault.ProofWithoutHtm, Fault.ProofWithoutHtu, Fault.ProofWithoutIat, Fault.ReplayParAssertionAtToken, Fault.AssertionNbfFuture,
+            Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId, Fault.AssertionHeaderJwk, Fault.AssertionHeaderX5c, Fault.AssertionHeaderJku
         };
 
-        public static readonly Fault[] IntrospectionFaults = { Fault.IntrospectWithClientSecret, Fault.IntrospectWithoutClientAuthentication };
+        public static readonly Fault[] IntrospectionFaults =
+        {
+            Fault.IntrospectWithClientSecret, Fault.IntrospectWithoutClientAuthentication, Fault.IntrospectAsOtherClient
+        };
 
-        public static readonly Fault[] RevocationFaults = { Fault.RevokeWithClientSecret, Fault.RevokeWithoutClientAuthentication };
+        public static readonly Fault[] RevocationFaults = { Fault.RevokeWithClientSecret, Fault.RevokeWithoutClientAuthentication, Fault.RevokeAsOtherClient };
+
+        /// <summary>The sign-in faults that change the browser request after the push.</summary>
+        public static readonly Fault[] BrowserRequestFaults = { Fault.ExtraBrowserParameter, Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId };
 
         public static readonly Fault[] ClientCredentialsFaults = { Fault.PasswordGrant };
 
@@ -174,13 +193,13 @@ namespace WebAppNetCore.OAuth
             Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth,
             Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof,
             Fault.UserInfoProofAlgNone, Fault.UserInfoProofSignatureOtherKey, Fault.UserInfoProofWithoutJti, Fault.UserInfoProofIatOld,
-            Fault.AccessTokenInQuery
+            Fault.AccessTokenInQuery, Fault.IdTokenAtUserInfo
         };
 
         public static readonly Fault[] RefreshFaults =
         {
             Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken,
-            Fault.NoDPoPProof, Fault.ReplayClientAssertion, Fault.RefreshWithoutClientAuthentication
+            Fault.NoDPoPProof, Fault.ReplayClientAssertion, Fault.RefreshWithoutClientAuthentication, Fault.RefreshWiderScope
         };
 
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
@@ -269,7 +288,16 @@ namespace WebAppNetCore.OAuth
             [Fault.AccessTokenInQuery] = "A GET with the DPoP-bound access token in the access_token query parameter and a valid proof, without an Authorization header. Expected: HTTP 401 invalid_token, or HTTP 400 invalid_request when UserInfo does not read the query (verify).",
             [Fault.IntrospectWithoutClientAuthentication] = "The introspection request with client_id and no client authentication. Expected: invalid_client.",
             [Fault.RevokeWithoutClientAuthentication] = "The revocation request with client_id and no client authentication. Expected: invalid_client.",
-            [Fault.RefreshWithoutClientAuthentication] = "The refresh request of a confidential client with client_id and no client authentication. Expected: invalid_client."
+            [Fault.RefreshWithoutClientAuthentication] = "The refresh request of a confidential client with client_id and no client authentication. Expected: invalid_client.",
+            [Fault.IdTokenAtUserInfo] = "The ID token of the sign-in with the Bearer scheme instead of the access token. Expected: HTTP 401 invalid_token (verify).",
+            [Fault.RefreshWiderScope] = "A refresh request with the scope of the sign-in and the scope fapi-fault-not-granted. Expected: invalid_scope, or a token without the extra scope (verify).",
+            [Fault.IntrospectAsOtherClient] = "The introspection request as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: an error or active false (verify).",
+            [Fault.RevokeAsOtherClient] = "The revocation request as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: the access token stays valid; an error (verify).",
+            [Fault.ExtraBrowserRedirectUri] = "redirect_uri /fault-redirect next to request_uri in the browser request (GET with PAR only). Expected: the code goes to the pushed redirect URI, or an error.",
+            [Fault.BrowserWithoutClientId] = "Only request_uri in the browser request, without client_id (GET with PAR only). Expected: invalid_request (verify).",
+            [Fault.AssertionHeaderJwk] = "Client assertions signed with a new key, without kid, and with the new key as jwk in the header. Expected: invalid_client.",
+            [Fault.AssertionHeaderX5c] = "Client assertions signed with a new key, without kid, and with a self-signed certificate of the new key as x5c in the header. Expected: invalid_client.",
+            [Fault.AssertionHeaderJku] = "Client assertions signed with a new key, without kid, and with a jku URL of a host that does not exist in the header. Expected: invalid_client."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

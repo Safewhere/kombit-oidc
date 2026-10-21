@@ -274,6 +274,15 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Intros
 | `IntrospectWithoutClientAuthentication` | Introspect | The introspection request with `client_id` and no client authentication | `invalid_client` |
 | `RevokeWithoutClientAuthentication` | Revoke | The revocation request with `client_id` and no client authentication | `invalid_client` |
 | `RefreshWithoutClientAuthentication` | Refresh | The refresh request of a confidential client with `client_id` and no client authentication. The refresh token is not bound to the DPoP key, so only client authentication protects it | `invalid_client` |
+| `IdTokenAtUserInfo` | Call UserInfo | The ID token of the sign-in with the Bearer scheme instead of the access token: a token substitution | HTTP 401 `invalid_token` (verify) |
+| `RefreshWiderScope` | Refresh | A refresh request with the scope of the sign-in and the scope `fapi-fault-not-granted`, which no connection has (RFC 6749 section 6) | `invalid_scope`, or a token without the extra scope (verify) |
+| `IntrospectAsOtherClient` | Introspect | The introspection request as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | An error or `active` `false` (verify) |
+| `RevokeAsOtherClient` | Revoke | The revocation request as `Testing:OtherClientId`, with an assertion signed by the client key. Needs `private_key_jwt` and another connection with the same client keys | The access token stays valid; an error (verify, RFC 7009 section 2.1) |
+| `ExtraBrowserRedirectUri` | Sign in | `redirect_uri` `/fault-redirect` on the origin of the sample next to `request_uri` in the browser request (GET with PAR only) | The code goes to the pushed redirect URI, or an error; never to `/fault-redirect` |
+| `BrowserWithoutClientId` | Sign in | Only `request_uri` in the browser request, without `client_id` (GET with PAR only) | `invalid_request` (verify, RFC 9126 section 4) |
+| `AssertionHeaderJwk` | Sign in | Client assertions signed with a new key, without `kid`, and with the new key as `jwk` in the header | `invalid_client` |
+| `AssertionHeaderX5c` | Sign in | Client assertions signed with a new key, without `kid`, and with a self-signed certificate of the new key as `x5c` in the header | `invalid_client` |
+| `AssertionHeaderJku` | Sign in | Client assertions signed with a new key, without `kid`, and with a `jku` URL of a host that does not exist in the header | `invalid_client` |
 
 Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 

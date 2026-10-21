@@ -114,12 +114,12 @@ namespace WebAppNetCore
                         session.Trace.Add("Fault injection", session.SignInFault + ": " + FaultInjection.Describe(session.SignInFault));
                     }
 
-                    if (session.SignInFault == Fault.ExtraBrowserParameter && !RedirectsAfterPush(configuration, metadata))
+                    if (FaultInjection.BrowserRequestFaults.Contains(session.SignInFault) && !RedirectsAfterPush(configuration, metadata))
                     {
                         // The fault changes the redirect after the push. Without it, the browser would send a valid request, and the
                         // result would look like an accepted violation.
                         throw new OAuthClientException(
-                            "The fault ExtraBrowserParameter needs AuthorizationEndpointMethod GET and a pushed authorization request. The sign-in did not start.");
+                            "The fault " + session.SignInFault + " needs AuthorizationEndpointMethod GET and a pushed authorization request. The sign-in did not start.");
                     }
 
                     if (session.SignInFault == Fault.ReplayParAssertionAtToken
@@ -183,18 +183,19 @@ namespace WebAppNetCore
                         });
                     }
                     context.HandlePush(result.RequestUri);
-                    if (fault == Fault.ExtraBrowserParameter)
+                    if (FaultInjection.BrowserRequestFaults.Contains(fault))
                     {
-                        // The handler writes the redirect after this event, so the parameter is added when the response starts.
+                        // The handler writes the redirect after this event, so the browser request is changed when the response starts.
                         // OnRedirectToIdentityProvider has stopped the sign-in with POST, where the handler writes a form instead.
                         var response = context.HttpContext.Response;
                         var scope = string.Join(" ", context.Options.Scope);
+                        var redirectUri = context.ProtocolMessage.RedirectUri;
                         response.OnStarting(() =>
                         {
                             var location = response.Headers.Location.ToString();
                             if (!string.IsNullOrEmpty(location))
                             {
-                                response.Headers.Location = QueryHelpers.AddQueryString(location, "scope", scope);
+                                response.Headers.Location = ChangeBrowserRequest(fault, location, scope, redirectUri);
                             }
                             return Task.CompletedTask;
                         });
@@ -385,6 +386,26 @@ namespace WebAppNetCore
         private static bool RedirectsAfterPush(IConfiguration configuration, OpenIdConnectConfiguration metadata)
         {
             return configuration.AuthorizationEndpointMethod() == OpenIdConnectRedirectBehavior.RedirectGet && Pushes(configuration, metadata);
+        }
+
+        /// <summary>
+        /// The browser request of a browser request fault: scope next to request_uri (ExtraBrowserParameter), redirect_uri
+        /// /fault-redirect on the origin of the pushed redirect URI (ExtraBrowserRedirectUri), or request_uri without client_id
+        /// (BrowserWithoutClientId).
+        /// </summary>
+        private static string ChangeBrowserRequest(Fault fault, string location, string scope, string redirectUri)
+        {
+            switch (fault)
+            {
+                case Fault.ExtraBrowserParameter:
+                    return QueryHelpers.AddQueryString(location, "scope", scope);
+                case Fault.ExtraBrowserRedirectUri:
+                    return QueryHelpers.AddQueryString(location, "redirect_uri", new Uri(new Uri(redirectUri), "/fault-redirect").ToString());
+                default:
+                    var uri = new Uri(location);
+                    var query = QueryHelpers.ParseQuery(uri.Query).Where(p => p.Key != "client_id").ToDictionary(p => p.Key, p => (string)p.Value);
+                    return QueryHelpers.AddQueryString(uri.GetLeftPart(UriPartial.Path), query);
+            }
         }
 
         private static bool Pushes(IConfiguration configuration, OpenIdConnectConfiguration metadata)

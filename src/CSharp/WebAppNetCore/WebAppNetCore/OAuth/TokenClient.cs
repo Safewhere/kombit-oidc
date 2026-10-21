@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading;
@@ -77,8 +78,18 @@ namespace WebAppNetCore.OAuth
                 { "grant_type", "refresh_token" },
                 { "refresh_token", refreshToken }
             };
+            if (fault == Fault.RefreshWiderScope)
+            {
+                // The scope of the sign-in and a scope that it did not grant (RFC 6749 section 6).
+                var scopes = (configuration.Scope() ?? string.Empty).Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                parameters["scope"] = string.Join(" ", scopes.Append(NotGrantedScope));
+            }
+
             return SendAsync("Token request (refresh token)", parameters, session, fault, cancellationToken);
         }
+
+        /// <summary>The scope that the fault RefreshWiderScope asks for. No connection has it.</summary>
+        public const string NotGrantedScope = "fapi-fault-not-granted";
 
         /// <summary>
         /// A client credentials grant (RFC 6749 section 4.4) without a sign-in, with a proof of the given key when it is not null.
