@@ -58,6 +58,11 @@ namespace WebAppNetCore.OAuth
                 // authorization request rejects it.
                 parameters["redirect_uri"] = new Uri(new Uri(redirectUri), "/other-callback").ToString();
             }
+            else if (fault == Fault.TokenWithoutRedirectUri)
+            {
+                // The authorization request had redirect_uri, so RFC 6749 section 4.1.3 requires it here.
+                parameters.Remove("redirect_uri");
+            }
 
             if (!string.IsNullOrEmpty(sessionState))
             {
@@ -88,7 +93,7 @@ namespace WebAppNetCore.OAuth
             return SendAsync("Token request (refresh token)", parameters, session, fault, cancellationToken);
         }
 
-        /// <summary>The scope that the fault RefreshWiderScope asks for. No connection has it.</summary>
+        /// <summary>The scope that the faults RefreshWiderScope and ParUnknownScope ask for. No connection has it.</summary>
         public const string NotGrantedScope = "fapi-fault-not-granted";
 
         /// <summary>

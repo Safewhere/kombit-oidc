@@ -158,14 +158,22 @@ namespace WebAppNetCore.Controllers
                 return RedirectToAction(nameof(HomeController.Index), "Home");
             }
 
+            // RevokeRefreshToken revokes the refresh token instead; the next refresh and UserInfo show the effect.
+            var revocationFault = FaultInjection.Parse(fault, configuration, FaultInjection.RevocationFaults);
+            var revokesRefreshToken = revocationFault == Fault.RevokeRefreshToken;
+            var token = result.Properties.GetTokenValue(revokesRefreshToken ? "refresh_token" : OpenIdConnectConstants.AccessToken);
+            if (revokesRefreshToken && string.IsNullOrEmpty(token))
+            {
+                TempData[ProtocolViewModel.ResultKey] = "The fault RevokeRefreshToken needs a refresh token, and the session has none. The request was not sent.";
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
             try
             {
-                await tokenManagementClient.RevokeAsync(
-                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
-                    sessionStore.Get(result.Properties),
-                    FaultInjection.Parse(fault, configuration, FaultInjection.RevocationFaults),
-                    HttpContext.RequestAborted);
-                TempData[ProtocolViewModel.ResultKey] = "The revocation succeeded. The session keeps the revoked access token.";
+                await tokenManagementClient.RevokeAsync(token, sessionStore.Get(result.Properties), revocationFault, HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = revokesRefreshToken
+                    ? "The revocation succeeded. The session keeps the revoked refresh token and its access token."
+                    : "The revocation succeeded. The session keeps the revoked access token.";
             }
             catch (OAuthClientException exception)
             {
@@ -232,6 +240,12 @@ namespace WebAppNetCore.Controllers
                     return RedirectToAction(nameof(HomeController.Index), "Home");
                 }
 
+                if (refreshFault == Fault.AccessTokenAsRefreshToken)
+                {
+                    TempData[ProtocolViewModel.ResultKey] = await RefreshWithAccessTokenAsync(tokenClient, result, session);
+                    return RedirectToAction(nameof(HomeController.Index), "Home");
+                }
+
                 var response = await tokenClient.RefreshAsync(refreshToken, session, refreshFault, HttpContext.RequestAborted);
                 var rotated = await StoreRefreshedTokensAsync(result, response, refreshToken);
                 TempData[ProtocolViewModel.ResultKey] = rotated
@@ -262,6 +276,17 @@ namespace WebAppNetCore.Controllers
             session?.Trace.Add("Fault injection", "ReuseRotatedRefreshToken: the next refresh request sends the old refresh token");
             await tokenClient.RefreshAsync(refreshToken, session, Fault.None, HttpContext.RequestAborted);
             return "ReuseRotatedRefreshToken: Identify accepted the old refresh token. The sample keeps the tokens of the first refresh.";
+        }
+
+        /// <summary>
+        /// The fault AccessTokenAsRefreshToken: a refresh request with the access token of the session as the refresh token, a
+        /// token substitution. The sample keeps its tokens, also when the server accepts the request.
+        /// </summary>
+        private async Task<string> RefreshWithAccessTokenAsync(TokenClient tokenClient, AuthenticateResult result, ClientSession session)
+        {
+            session?.Trace.Add("Fault injection", "AccessTokenAsRefreshToken: the refresh request sends the access token as the refresh token");
+            await tokenClient.RefreshAsync(result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken), session, Fault.None, HttpContext.RequestAborted);
+            return "AccessTokenAsRefreshToken: Identify accepted the access token as a refresh token. The sample keeps its tokens.";
         }
 
         /// <summary>

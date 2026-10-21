@@ -43,20 +43,22 @@ namespace WebAppNetCore.OAuth
         }
 
         /// <summary>
-        /// Revokes the access token. RevokeWithClientSecret authenticates with client_secret_post instead of the configured method,
-        /// RevokeWithoutClientAuthentication sends only client_id, and RevokeAsOtherClient authenticates as Testing:OtherClientId.
+        /// Revokes the token: the access token, or the refresh token with RevokeRefreshToken. RevokeWithClientSecret authenticates
+        /// with client_secret_post instead of the configured method, RevokeWithoutClientAuthentication sends only client_id, and
+        /// RevokeAsOtherClient authenticates as Testing:OtherClientId.
         /// </summary>
-        public async Task RevokeAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
+        public async Task RevokeAsync(string token, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
             var endpoint = IdentifyMetadata.RequireEndpoint(metadata.RevocationEndpoint, "revocation_endpoint");
-            using var response = await SendAsync("Revocation request", "revocation endpoint", endpoint, accessToken, session, fault, metadata, cancellationToken);
+            using var response = await SendAsync("Revocation request", "revocation endpoint", endpoint, token, session, fault, metadata, cancellationToken);
         }
 
         private async Task<HttpResponseMessage> SendAsync(
-            string step, string endpointName, string endpoint, string accessToken, ClientSession session, Fault fault, OpenIdConnectConfiguration metadata, CancellationToken cancellationToken)
+            string step, string endpointName, string endpoint, string token, ClientSession session, Fault fault, OpenIdConnectConfiguration metadata, CancellationToken cancellationToken)
         {
-            var parameters = new Dictionary<string, string> { { "token", accessToken }, { "token_type_hint", "access_token" } };
+            var tokenTypeHint = fault == Fault.RevokeRefreshToken ? "refresh_token" : "access_token";
+            var parameters = new Dictionary<string, string> { { "token", token }, { "token_type_hint", tokenTypeHint } };
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             string clientAssertion = null;
             if (fault == Fault.IntrospectWithClientSecret || fault == Fault.RevokeWithClientSecret)

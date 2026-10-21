@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
@@ -9,6 +10,8 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using System;
 using System.Threading.Tasks;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Linq;
 using System.Text.Json;
 using Microsoft.IdentityModel.Logging;
@@ -128,6 +131,11 @@ namespace WebAppNetCore
                         // The fault sends the client assertion of the pushed request again. Without one, it has nothing to send.
                         throw new OAuthClientException(
                             "The fault ReplayParAssertionAtToken needs TokenAuthnMethod private_key_jwt and a pushed authorization request. The sign-in did not start.");
+                    }
+
+                    if (session.SignInFault == Fault.ShortCodeVerifier || session.SignInFault == Fault.LongCodeVerifier)
+                    {
+                        ReplaceCodeVerifier(context, session);
                     }
 
                     if (configuration.UsesDPoPKey())
@@ -406,6 +414,28 @@ namespace WebAppNetCore
                     var query = QueryHelpers.ParseQuery(uri.Query).Where(p => p.Key != "client_id").ToDictionary(p => p.Key, p => (string)p.Value);
                     return QueryHelpers.AddQueryString(uri.GetLeftPart(UriPartial.Path), query);
             }
+        }
+
+        /// <summary>
+        /// A code_verifier of 42 (ShortCodeVerifier) or 129 (LongCodeVerifier) characters, outside the 43 to 128 of RFC 7636
+        /// section 4.1, with its S256 code_challenge, so that only a length check can reject the pair. The handler has added its
+        /// own pair before this event, and it sends the verifier of the properties at the code redemption.
+        /// </summary>
+        private static void ReplaceCodeVerifier(RedirectContext context, ClientSession session)
+        {
+            if (!context.ProtocolMessage.Parameters.ContainsKey(OAuthConstants.CodeChallengeKey))
+            {
+                // Without PKCE there is no verifier to change, and the result would look like an accepted violation.
+                throw new OAuthClientException(
+                    "The fault " + session.SignInFault + " needs PKCE, which the handler uses with the response type code. The sign-in did not start.");
+            }
+
+            var length = session.SignInFault == Fault.ShortCodeVerifier ? 42 : 129;
+            // 97 random bytes give 130 base64url characters, which are all unreserved characters of RFC 7636 section 4.1.
+            var codeVerifier = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(97)).Substring(0, length);
+            context.Properties.Items[OAuthConstants.CodeVerifierKey] = codeVerifier;
+            context.ProtocolMessage.Parameters[OAuthConstants.CodeChallengeKey] = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
+            session.Trace.Add("Fault injection", session.SignInFault + ": a code_verifier of " + length + " characters and its S256 code_challenge");
         }
 
         private static bool Pushes(IConfiguration configuration, OpenIdConnectConfiguration metadata)

@@ -147,7 +147,25 @@ namespace WebAppNetCore.OAuth
         BrowserWithoutClientId,
         AssertionHeaderJwk,
         AssertionHeaderX5c,
-        AssertionHeaderJku
+        AssertionHeaderJku,
+
+        // Values that only a check of the value rejects: a scope that no connection has in the pushed request, a token proof
+        // without jwk, client assertions without iss or sub, with a trailing slash in aud, valid for a year, or with another
+        // assertion type, code verifiers outside 43 to 128 characters, and a token request without redirect_uri.
+        ParUnknownScope,
+        ProofWithoutJwk,
+        AssertionWithoutIss,
+        AssertionWithoutSub,
+        AssertionAudienceTrailingSlash,
+        AssertionLongLived,
+        WrongAssertionType,
+        ShortCodeVerifier,
+        LongCodeVerifier,
+        TokenWithoutRedirectUri,
+
+        // The access token as the refresh token, and the revocation of the refresh token instead of the access token.
+        AccessTokenAsRefreshToken,
+        RevokeRefreshToken
     }
 
     public static class FaultInjection
@@ -172,7 +190,9 @@ namespace WebAppNetCore.OAuth
             Fault.AssertionWithoutJti, Fault.AssertionAndClientSecret, Fault.ClientIdNotSubject, Fault.WrongCodeVerifier,
             Fault.RedeemCodeAfter10Seconds, Fault.RedeemCodeAfter5Seconds,
             Fault.ProofWithoutHtm, Fault.ProofWithoutHtu, Fault.ProofWithoutIat, Fault.ReplayParAssertionAtToken, Fault.AssertionNbfFuture,
-            Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId, Fault.AssertionHeaderJwk, Fault.AssertionHeaderX5c, Fault.AssertionHeaderJku
+            Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId, Fault.AssertionHeaderJwk, Fault.AssertionHeaderX5c, Fault.AssertionHeaderJku,
+            Fault.ParUnknownScope, Fault.ProofWithoutJwk, Fault.AssertionWithoutIss, Fault.AssertionWithoutSub, Fault.AssertionAudienceTrailingSlash,
+            Fault.AssertionLongLived, Fault.WrongAssertionType, Fault.ShortCodeVerifier, Fault.LongCodeVerifier, Fault.TokenWithoutRedirectUri
         };
 
         public static readonly Fault[] IntrospectionFaults =
@@ -180,7 +200,10 @@ namespace WebAppNetCore.OAuth
             Fault.IntrospectWithClientSecret, Fault.IntrospectWithoutClientAuthentication, Fault.IntrospectAsOtherClient
         };
 
-        public static readonly Fault[] RevocationFaults = { Fault.RevokeWithClientSecret, Fault.RevokeWithoutClientAuthentication, Fault.RevokeAsOtherClient };
+        public static readonly Fault[] RevocationFaults =
+        {
+            Fault.RevokeWithClientSecret, Fault.RevokeWithoutClientAuthentication, Fault.RevokeAsOtherClient, Fault.RevokeRefreshToken
+        };
 
         /// <summary>The sign-in faults that change the browser request after the push.</summary>
         public static readonly Fault[] BrowserRequestFaults = { Fault.ExtraBrowserParameter, Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId };
@@ -199,7 +222,8 @@ namespace WebAppNetCore.OAuth
         public static readonly Fault[] RefreshFaults =
         {
             Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken,
-            Fault.NoDPoPProof, Fault.ReplayClientAssertion, Fault.RefreshWithoutClientAuthentication, Fault.RefreshWiderScope
+            Fault.NoDPoPProof, Fault.ReplayClientAssertion, Fault.RefreshWithoutClientAuthentication, Fault.RefreshWiderScope,
+            Fault.AccessTokenAsRefreshToken
         };
 
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
@@ -297,7 +321,19 @@ namespace WebAppNetCore.OAuth
             [Fault.BrowserWithoutClientId] = "Only request_uri in the browser request, without client_id (GET with PAR only). Expected: invalid_request (verify).",
             [Fault.AssertionHeaderJwk] = "Client assertions signed with a new key, without kid, and with the new key as jwk in the header. Expected: invalid_client.",
             [Fault.AssertionHeaderX5c] = "Client assertions signed with a new key, without kid, and with a self-signed certificate of the new key as x5c in the header. Expected: invalid_client.",
-            [Fault.AssertionHeaderJku] = "Client assertions signed with a new key, without kid, and with a jku URL of a host that does not exist in the header. Expected: invalid_client."
+            [Fault.AssertionHeaderJku] = "Client assertions signed with a new key, without kid, and with a jku URL of a host that does not exist in the header. Expected: invalid_client.",
+            [Fault.ParUnknownScope] = "A pushed request with the scope of the sign-in and the scope fapi-fault-not-granted, which no connection has. Expected: invalid_scope (verify).",
+            [Fault.ProofWithoutJwk] = "A token proof with the thumbprint of the DPoP key as kid instead of the jwk header. Expected: invalid_dpop_proof.",
+            [Fault.AssertionWithoutIss] = "Client assertions without iss. Expected: invalid_client.",
+            [Fault.AssertionWithoutSub] = "Client assertions without sub. Expected: invalid_client.",
+            [Fault.AssertionAudienceTrailingSlash] = "Client assertions whose aud is the configured audience with a trailing slash. Expected: invalid_client with clientAssertion.audience=issuer.",
+            [Fault.AssertionLongLived] = "Client assertions with exp one year after iat. Expected: invalid_client, or success (verify: RFC 7523 section 3 lets the server reject an exp far in the future).",
+            [Fault.WrongAssertionType] = "A valid client assertion with client_assertion_type saml2-bearer. Expected: invalid_client.",
+            [Fault.ShortCodeVerifier] = "A code_verifier of 42 characters and its S256 code_challenge. Expected: invalid_grant or invalid_request (verify: RFC 7636 section 4.1 requires 43 to 128 characters).",
+            [Fault.LongCodeVerifier] = "A code_verifier of 129 characters and its S256 code_challenge. Expected: invalid_grant or invalid_request (verify: RFC 7636 section 4.1 requires 43 to 128 characters).",
+            [Fault.TokenWithoutRedirectUri] = "A token request without redirect_uri, although the authorization request had one. Expected: invalid_grant or invalid_request (verify: RFC 6749 section 4.1.3).",
+            [Fault.AccessTokenAsRefreshToken] = "A refresh request with the access token of the session as the refresh token. Expected: invalid_grant.",
+            [Fault.RevokeRefreshToken] = "The revocation request with the refresh token (token_type_hint refresh_token) instead of the access token. Expected: success; then a refresh fails with invalid_grant (verify whether the access token is revoked too, RFC 7009 section 2.1)."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

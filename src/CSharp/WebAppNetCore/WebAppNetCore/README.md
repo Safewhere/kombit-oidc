@@ -283,6 +283,16 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Intros
 | `AssertionHeaderJwk` | Sign in | Client assertions signed with a new key, without `kid`, and with the new key as `jwk` in the header | `invalid_client` |
 | `AssertionHeaderX5c` | Sign in | Client assertions signed with a new key, without `kid`, and with a self-signed certificate of the new key as `x5c` in the header | `invalid_client` |
 | `AssertionHeaderJku` | Sign in | Client assertions signed with a new key, without `kid`, and with a `jku` URL of a host that does not exist in the header | `invalid_client` |
+| `ParUnknownScope` | Sign in | A pushed request with the scope of the sign-in and the scope `fapi-fault-not-granted`, which no connection has | `invalid_scope` (verify) |
+| `ProofWithoutJwk` | Sign in | A token proof with the thumbprint of the DPoP key as `kid` instead of the `jwk` header | `invalid_dpop_proof` |
+| `AssertionWithoutIss`, `AssertionWithoutSub` | Sign in | Client assertions without `iss`, or without `sub` | `invalid_client` |
+| `AssertionAudienceTrailingSlash` | Sign in | Client assertions whose `aud` is the configured audience with a trailing slash | `invalid_client` with `clientAssertion.audience=issuer` (FAPI 2.0 section 5.3.2.1 item 8) |
+| `AssertionLongLived` | Sign in | Client assertions with `exp` one year after `iat` | `invalid_client`, or success (verify, RFC 7523 section 3) |
+| `WrongAssertionType` | Sign in | A valid client assertion with `client_assertion_type` `urn:ietf:params:oauth:client-assertion-type:saml2-bearer` | `invalid_client` |
+| `ShortCodeVerifier`, `LongCodeVerifier` | Sign in | A `code_verifier` of 42 or 129 characters, with its S256 `code_challenge` in the authorization request | `invalid_grant` or `invalid_request` (verify, RFC 7636 section 4.1: 43 to 128 characters) |
+| `TokenWithoutRedirectUri` | Sign in | A token request without `redirect_uri`, although the authorization request had one | `invalid_grant` or `invalid_request` (verify, RFC 6749 section 4.1.3) |
+| `AccessTokenAsRefreshToken` | Refresh | A refresh request with the access token of the session as the refresh token. The sample keeps its tokens | `invalid_grant` |
+| `RevokeRefreshToken` | Revoke | The revocation request with the refresh token and `token_type_hint` `refresh_token` instead of the access token | Success; then a refresh fails with `invalid_grant`, and UserInfo shows whether the access token is revoked too (verify, RFC 7009 section 2.1) |
 
 Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 

@@ -25,8 +25,8 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Creates the proof that a fault asks for, or a correct proof for any other fault: ProofAlgNone (unsigned), ProofHmac
-        /// (HS256 with a random key), ProofSignatureOtherKey (the jwk of the key, signed with another key), or a proof without
-        /// jti, htm, htu, or iat.
+        /// (HS256 with a random key), ProofSignatureOtherKey (the jwk of the key, signed with another key), ProofWithoutJwk (a kid
+        /// instead of the jwk), or a proof without jti, htm, htu, or iat.
         /// </summary>
         public static string Create(Fault fault, DPoPKey key, string algorithm, string httpMethod, string httpUri, string accessToken = null, string nonce = null)
         {
@@ -84,6 +84,17 @@ namespace WebAppNetCore.OAuth
 
                 case Fault.ProofPrivateJwkMembers:
                     return Sign(key.SecurityKey, key.PrivateJwkForFault(), algorithm, claims, ProofType);
+
+                case Fault.ProofWithoutJwk:
+                    // The key named by kid only, so that the server has no key to verify the proof with (RFC 9449 section 4.3).
+                    var keyIdOnly = new RsaSecurityKey(key.SecurityKey.Rsa) { KeyId = key.Thumbprint };
+                    var descriptor = new SecurityTokenDescriptor
+                    {
+                        TokenType = ProofType,
+                        Claims = claims,
+                        SigningCredentials = new SigningCredentials(keyIdOnly, algorithm)
+                    };
+                    return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(descriptor);
 
                 default:
                     return Sign(key.SecurityKey, key, algorithm, claims);

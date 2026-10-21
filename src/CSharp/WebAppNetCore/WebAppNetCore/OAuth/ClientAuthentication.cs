@@ -20,6 +20,9 @@ namespace WebAppNetCore.OAuth
     {
         public const string ClientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 
+        /// <summary>The client_assertion_type of the fault WrongAssertionType: a SAML assertion (RFC 7522), which the JWT is not.</summary>
+        public const string SamlAssertionType = "urn:ietf:params:oauth:client-assertion-type:saml2-bearer";
+
         private readonly IConfiguration configuration;
 
         public ClientAuthentication(IConfiguration configuration)
@@ -69,7 +72,8 @@ namespace WebAppNetCore.OAuth
 
                 default: // private_key_jwt
                     var clientAssertion = CreateClientAssertion(metadata, fault, clientId);
-                    parameters["client_assertion_type"] = ClientAssertionType;
+                    // WrongAssertionType: a valid assertion that the type names as another kind of assertion.
+                    parameters["client_assertion_type"] = fault == Fault.WrongAssertionType ? SamlAssertionType : ClientAssertionType;
                     parameters["client_assertion"] = clientAssertion;
                     // ClientIdNotSubject: the form client_id names another client than the assertion.
                     parameters["client_id"] = fault == Fault.ClientIdNotSubject ? configuration.OtherClientId() : clientId;
@@ -101,7 +105,18 @@ namespace WebAppNetCore.OAuth
                 Fault.AssertionExpired => DateTimeOffset.UtcNow.AddSeconds(-120),
                 _ => DateTimeOffset.UtcNow
             };
-            var expiresAt = fault == Fault.AssertionExpired ? DateTimeOffset.UtcNow.AddSeconds(-60) : issuedAt.AddMinutes(5);
+            var expiresAt = fault switch
+            {
+                Fault.AssertionExpired => DateTimeOffset.UtcNow.AddSeconds(-60),
+                Fault.AssertionLongLived => issuedAt.AddDays(365),
+                _ => issuedAt.AddMinutes(5)
+            };
+            if (fault == Fault.AssertionAudienceTrailingSlash)
+            {
+                // The same URL to a lenient comparison, another string to the exact one (FAPI 2.0 section 5.3.2.1 item 8).
+                audience += "/";
+            }
+
             var claims = new Dictionary<string, object>
             {
                 { "iss", fault == Fault.AssertionIssuerNotClient ? configuration.OtherClientId() : clientId },
@@ -134,6 +149,14 @@ namespace WebAppNetCore.OAuth
 
                 case Fault.AssertionWithoutJti:
                     claims.Remove("jti");
+                    break;
+
+                case Fault.AssertionWithoutIss:
+                    claims.Remove("iss");
+                    break;
+
+                case Fault.AssertionWithoutSub:
+                    claims.Remove("sub");
                     break;
 
                 case Fault.AssertionNbfFuture:

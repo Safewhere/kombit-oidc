@@ -158,6 +158,9 @@ namespace WebAppNetCore.OAuth
                 case Fault.ResponseTypeWithToken:
                     parameters["response_type"] = "code token";
                     break;
+                case Fault.ParUnknownScope:
+                    parameters["scope"] = (parameters.TryGetValue("scope", out var pushedScope) ? pushedScope + " " : string.Empty) + TokenClient.NotGrantedScope;
+                    break;
             }
 
             return repeated;
