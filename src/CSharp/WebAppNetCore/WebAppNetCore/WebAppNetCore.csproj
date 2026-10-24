@@ -7,11 +7,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
+    <PackageReference Include="Fido2" Version="4.1.0" />
+    <PackageReference Include="Fido2.Models" Version="4.1.0" />
+    <PackageReference Include="System.Formats.Cbor" Version="9.0.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.71" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.12" />
     <PackageReference Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="10.0.2" PrivateAssets="All" />
     <!-- Override the scaffolding dependency affected by GHSA-g4vj-cjjj-v7hg. -->
     <PackageReference Include="NuGet.Protocol" Version="6.12.5" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WebAppNetCore.Emergency.Tests" />
   </ItemGroup>
 
   <ItemGroup>

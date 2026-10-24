@@ -76,7 +76,7 @@ namespace WebAppNetCore
             try
             {
                 var symmetricKey = ((Microsoft.IdentityModel.Tokens.SymmetricSecurityKey)Key).Key;
-                
+
                 Console.WriteLine($"DecryptWithCbcHs: Algorithm={Algorithm}");
                 Console.WriteLine($"DecryptWithCbcHs: Key length={symmetricKey.Length} bytes");
                 Console.WriteLine($"DecryptWithCbcHs: AAD length={authenticatedData?.Length ?? 0} bytes");
@@ -126,13 +126,13 @@ namespace WebAppNetCore
                 var encKey = new byte[encKeySize];
                 Array.Copy(symmetricKey, 0, macKey, 0, macKeySize);
                 Array.Copy(symmetricKey, macKeySize, encKey, 0, encKeySize);
-                
+
                 Console.WriteLine($"DecryptWithCbcHs: MAC key: {Convert.ToHexString(macKey)}");
                 Console.WriteLine($"DecryptWithCbcHs: Enc key: {Convert.ToHexString(encKey)}");
 
                 // Try both interpretations of RFC 7518 - with and without the AL field
                 // to see which one produces the correct HMAC
-                
+
                 // Version 1: Without AL field (some implementations don't include it)
                 var authInputLength1 = (authenticatedData?.Length ?? 0) + iv.Length + ciphertext.Length;
                 var authInput1 = new byte[authInputLength1];
@@ -155,7 +155,7 @@ namespace WebAppNetCore
                 {
                     Array.Reverse(aadLengthBytes);
                 }
-                
+
                 var authInputLength2 = aadLength + iv.Length + ciphertext.Length + 8;
                 var authInput2 = new byte[authInputLength2];
                 int offset2 = 0;
@@ -178,7 +178,7 @@ namespace WebAppNetCore
                 {
                     Array.Reverse(aadLengthOctetsBytes);
                 }
-                
+
                 var authInputLength3 = aadLength + iv.Length + ciphertext.Length + 8;
                 var authInput3 = new byte[authInputLength3];
                 int offset3 = 0;
@@ -206,7 +206,7 @@ namespace WebAppNetCore
                 for (int i = 0; i < authInputs.Length; i++)
                 {
                     byte[] computedTag = new byte[macSize];
-                    
+
                     switch (hashAlgorithm.Name)
                     {
                         case "SHA256":
@@ -232,12 +232,12 @@ namespace WebAppNetCore
                             break;
                     }
 
-                    Console.WriteLine($"DecryptWithCbcHs: Version {i+1} ({versions[i]}) - Computed tag: {Convert.ToHexString(computedTag)}");
-                    
+                    Console.WriteLine($"DecryptWithCbcHs: Version {i + 1} ({versions[i]}) - Computed tag: {Convert.ToHexString(computedTag)}");
+
                     if (ConstantTimeEquals(computedTag, authenticationTag))
                     {
-                        Console.WriteLine($"DecryptWithCbcHs: HMAC verification successful with version {i+1} ({versions[i]})!");
-                        
+                        Console.WriteLine($"DecryptWithCbcHs: HMAC verification successful with version {i + 1} ({versions[i]})!");
+
                         // Use the correct authInput for further processing
                         // Decrypt with AES-CBC
                         using (var aes = Aes.Create())
@@ -251,17 +251,17 @@ namespace WebAppNetCore
                             {
                                 var decryptedBytes = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
                                 Console.WriteLine($"DecryptWithCbcHs: AES-CBC decryption successful, plaintext length={decryptedBytes.Length} bytes");
-                                
-                                try 
+
+                                try
                                 {
                                     var testString = System.Text.Encoding.UTF8.GetString(decryptedBytes);
                                     Console.WriteLine($"DecryptWithCbcHs: Decrypted text preview: {testString.Substring(0, Math.Min(100, testString.Length))}...");
                                 }
-                                catch 
+                                catch
                                 {
                                     Console.WriteLine($"DecryptWithCbcHs: Warning - Decrypted bytes do not appear to be valid UTF-8");
                                 }
-                                
+
                                 return decryptedBytes;
                             }
                         }

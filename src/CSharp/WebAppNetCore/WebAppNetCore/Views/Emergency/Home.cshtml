@@ -1,0 +1,30 @@
+@{
+    Layout = "_EmergencyLayout";
+    ViewData["Title"] = "Emergency session";
+    DateTimeOffset expires = DateTimeOffset.FromUnixTimeSeconds(long.Parse(User.FindFirst("emergency_expires").Value));
+}
+<main id="emergency" class="em-shell em-main" data-base="@Url.Content("~/emergency")" data-mode="home">
+    <p class="em-notice">Local emergency access. Normal token actions, federated logout, and session iframes are unavailable.</p>
+    @Html.AntiForgeryToken()
+    <p id="message" class="em-message" role="status" aria-live="polite"></p>
+    <section class="em-card">
+        <div class="em-card-head">
+            <h1>Emergency session</h1>
+            <button id="signout" type="button">Sign out locally</button>
+        </div>
+        <dl class="em-stats">
+            <div><dt>Status</dt><dd><span class="em-badge" data-status="active">Active</span></dd></div>
+            <div><dt>Session ends</dt><dd><time data-local datetime="@expires.ToString("o")">@expires.ToString("u")</time></dd></div>
+        </dl>
+    </section>
+    <section class="em-card">
+        <h2>Permitted claims</h2>
+        <dl class="em-claims">
+            @foreach (var claim in User.Claims.Where(claim => claim.Type != "emergency_session_id"))
+            {
+                <div><dt>@claim.Type</dt><dd>@claim.Value</dd></div>
+            }
+        </dl>
+    </section>
+    <partial name="_IssuerDiagnostics" />
+</main>

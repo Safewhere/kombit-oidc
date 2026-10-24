@@ -25,14 +25,18 @@ namespace WebAppNetCore.Controllers
 
         public IActionResult Index()
         {
-            
+            if (EmergencyCredential.EmergencyMiddleware.IsEmergency(User))
+            {
+                return RedirectToAction("Home", "Emergency");
+            }
+
             ViewData["Origin"] = $"{Request.Scheme}://{Request.Host.Value}";
 
             var authorizationRequest = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, Configuration);
             ViewData["Reauthenticate"] = authorizationRequest;
 
             ViewData["EndSessionUri"] = Configuration.EndSessionEndpoint();
-            if(HttpContext.User.Identity.IsAuthenticated)
+            if (HttpContext.User.Identity.IsAuthenticated)
             {
                 ViewData["IdTokenHint"] = HttpContext.GetTokenAsync(OpenIdConnectConstants.IdToken).Result;
                 ViewData[OpenIdConnectConstants.AccessToken] = HttpContext.GetTokenAsync(OpenIdConnectConstants.AccessToken).Result;
@@ -54,7 +58,7 @@ namespace WebAppNetCore.Controllers
             }
             return View();
         }
-       
+
         public IActionResult About()
         {
             ViewData["Message"] = "Your application description page.";
@@ -73,6 +77,6 @@ namespace WebAppNetCore.Controllers
         {
             var message = HttpContext.Items["RemoteError"]?.ToString();
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier, Message = message });
-        }    
+        }
     }
 }

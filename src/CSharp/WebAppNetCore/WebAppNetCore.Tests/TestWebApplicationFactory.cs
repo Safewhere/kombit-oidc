@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Net;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Hosting;
@@ -6,8 +8,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using System.Collections.Generic;
-using System.Net;
 
 namespace WebAppNetCore.Tests;
 

@@ -1,0 +1,18 @@
+{
+  "EmergencyCredential": {
+    "Enabled": false,
+    "Origin": "https://oidc.example.invalid",
+    "RelyingPartyId": "oidc.example.invalid",
+    "Issuer": "https://identify.example.invalid/runtime/emergency",
+    "IssuerBaseUrl": "https://identify.example.invalid/runtime/",
+    "NormalIssuer": "https://identify.example.invalid/runtime/oauth2",
+    "Audience": "urn:emergency:oidc-example",
+    "StorageDirectory": "C:\\ProgramData\\SafewhereSamples\\OidcEmergency\\state",
+    "ProtectionKeysDirectory": "C:\\ProgramData\\SafewhereSamples\\OidcEmergency\\protection",
+    "EncryptionPrivateKeyFile": "C:\\ProgramData\\SafewhereSamples\\OidcEmergency\\decryption-key.bin",
+    "EncryptionKeyId": "oidc-emergency-encryption",
+    "TrustedSigningKeysFile": "C:\\ProgramData\\SafewhereSamples\\OidcEmergency\\issuer-signing-keys.json",
+    "ApiKey": "oidc-poc-key",
+    "SessionMinutes": 480
+  }
+}

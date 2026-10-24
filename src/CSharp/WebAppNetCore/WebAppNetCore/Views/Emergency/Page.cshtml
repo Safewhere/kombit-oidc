@@ -1,0 +1,69 @@
+@model WebAppNetCore.EmergencyCredential.EmergencyPageModel
+@{
+    Layout = "_EmergencyLayout";
+    ViewData["Title"] = "Emergency access";
+    string Current(string mode) => Model.Mode == mode ? "page" : null;
+}
+@section Nav {
+    <nav class="em-nav" aria-label="Emergency access">
+        <a href="@Url.Content("~/")">Normal application</a>
+        <a href="@Url.Action("Prepare", "Emergency")" aria-current="@Current("prepare")">Prepare browser</a>
+        <a href="@Url.Action("Login", "Emergency")" aria-current="@Current("login")">Emergency login</a>
+    </nav>
+}
+<main id="emergency" class="em-shell em-main" data-base="@Url.Content("~/emergency")" data-mode="@Model.Mode">
+    <p class="em-notice">Proof of concept. This session has limited local access. It does not provide normal NSIS assurance.</p>
+    @Html.AntiForgeryToken()
+    <p id="message" class="em-message" role="status" aria-live="polite"></p>
+    <noscript><p class="em-notice">This feature requires JavaScript and a browser with WebAuthn and IndexedDB.</p></noscript>
+    @if (Model.Mode == "prepare")
+    {
+        <section class="em-card">
+            <h1>Prepare this browser</h1>
+            <p class="em-lead">Store an emergency credential in this browser so you can log in locally when Identify is unavailable.</p>
+            <ol class="em-steps">
+                <li id="normal-login-step" hidden="@(Model.CanPrepare)">
+                    <h2>Get a fresh normal login</h2>
+                    <p>Preparation and renewal each need a new, unused normal login.</p>
+                    <a id="normal-login" class="button-link" href="@Url.Action("NormalLogin", "Emergency")">Get a new normal login for preparation or renewal</a>
+                </li>
+                <li id="prepare-step" hidden="@(!Model.CanPrepare)">
+                    <h2>Register and confirm your key</h2>
+                    <p>Use a security key or passkey. User presence is required; user verification is preferred. You will be asked to use your key twice.</p>
+                    <button id="prepare" class="em-primary" type="button" disabled="@(!Model.CanPrepare)">Prepare this browser</button>
+                </li>
+            </ol>
+            <p id="storage-warning" class="em-hint"></p>
+        </section>
+        <section class="em-card">
+            <h2>Credentials in this browser</h2>
+            <ul id="credentials" class="em-credentials"></ul>
+        </section>
+        <section class="em-card em-card-quiet">
+            <h2>Good to know</h2>
+            <ul class="em-points">
+                <li>Clearing or evicting site data loses preparation. Private browsing and other browser profiles are not prepared.</li>
+                <li>If issuance succeeded but the browser did not receive or store the credential, its key may still count towards the issuer's limit. Remove that key before enrolling again.</li>
+            </ul>
+        </section>
+    }
+    else if (Model.Mode == "login")
+    {
+        <section class="em-card">
+            <h1>Local emergency login</h1>
+            <p class="em-lead">Select a credential stored in this browser. Identify is not contacted.</p>
+            <ul id="credentials" class="em-credentials"></ul>
+        </section>
+    }
+    else
+    {
+        <section class="em-card">
+            <div class="em-empty-state">
+                <h1>Session ended</h1>
+                <p>Your emergency session expired or local access is unavailable. Log in again with a key prepared in this browser.</p>
+                <a class="button-link em-primary" href="@Url.Action("Login", "Emergency")">Go to emergency login</a>
+            </div>
+        </section>
+    }
+    <partial name="_IssuerDiagnostics" />
+</main>

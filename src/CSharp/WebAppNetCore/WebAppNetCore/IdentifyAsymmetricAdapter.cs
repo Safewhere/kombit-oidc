@@ -270,7 +270,7 @@ namespace WebAppNetCore
                 Console.WriteLine($"DecryptWithRsa called with {bytes.Length} bytes, using padding: {RSAEncryptionPadding}");
                 Console.WriteLine($"RSA key size: {RSA.KeySize} bits");
                 Console.WriteLine($"RSA has private key: {(RSA as RSA)?.KeySize > 0}");
-                
+
                 var result = RSA.Decrypt(bytes, RSAEncryptionPadding);
                 Console.WriteLine($"DecryptWithRsa successful, decrypted {result.Length} bytes");
                 return result;

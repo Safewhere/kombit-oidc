@@ -1,4 +1,5 @@
 @using Microsoft.Extensions.Options
+@inject WebAppNetCore.EmergencyCredential.EmergencyRuntime EmergencyRuntime
 @using System.Security.Principal
 
 @{
@@ -15,7 +16,15 @@
     string Loa = "";
 }
 
-@if (User.Identity.IsAuthenticated)
+@if (EmergencyRuntime.Options.Enabled)
+{
+    <p><a href="@Url.Action("Prepare", "Emergency")">Prepare emergency access</a> <a href="@Url.Action("Login", "Emergency")">Local emergency login</a></p>
+}
+@if (WebAppNetCore.EmergencyCredential.EmergencyMiddleware.IsEmergency(User))
+{
+    <p>Emergency session. <a href="@Url.Action("Home", "Emergency")">Open local session and sign out</a></p>
+}
+else if (User.Identity.IsAuthenticated)
 {
     <div class="alert alert-success" role="alert"> Hello, @User.Identity.Name!</div>
     <div class="alert alert-info" role="alert">

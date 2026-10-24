@@ -4,6 +4,8 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebAppNetCore", "WebAppNetCore.csproj", "{14B0D0E6-C3BF-E179-8E2B-5B3F12145EE4}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WebAppNetCore.Emergency.Tests", "..\WebAppNetCore.Emergency.Tests\WebAppNetCore.Emergency.Tests.csproj", "{8B78068F-037F-4574-BDEE-7176031CD91B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -14,6 +16,10 @@ Global
 		{14B0D0E6-C3BF-E179-8E2B-5B3F12145EE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{14B0D0E6-C3BF-E179-8E2B-5B3F12145EE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{14B0D0E6-C3BF-E179-8E2B-5B3F12145EE4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8B78068F-037F-4574-BDEE-7176031CD91B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B78068F-037F-4574-BDEE-7176031CD91B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B78068F-037F-4574-BDEE-7176031CD91B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B78068F-037F-4574-BDEE-7176031CD91B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

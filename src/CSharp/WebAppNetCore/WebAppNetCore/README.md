@@ -74,3 +74,8 @@ So the jwks or jwks_uri must contain the public certificate in a key (use="enc")
 ## Back-channel & Front-channel logout
 
 When enabling back-channel or front-channel logout on the Identify's OIDC connection, you must disable the EnableSessionManagement by setting it to "false".
+
+
+## Optional emergency access
+
+Emergency support is disabled by default. See [the emergency PoC guide](README-emergency.md) for configuration, preparation, emergency login, tests, and known limits.

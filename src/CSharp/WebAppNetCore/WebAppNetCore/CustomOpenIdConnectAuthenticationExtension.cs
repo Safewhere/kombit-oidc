@@ -1,20 +1,20 @@
-﻿using Microsoft.AspNetCore.Authentication.Cookies;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
-using System;
-using System.Threading.Tasks;
-using System.Security.Claims;
-using System.Linq;
-using System.Collections.Generic;
 using Microsoft.IdentityModel.Logging;
-using System.Net.Http.Headers;
-using System.Net.Http;
-using System.Text.Json;
-using System.Text;
-using System.Security.Cryptography.X509Certificates;
+using Microsoft.IdentityModel.Tokens;
 
 namespace WebAppNetCore
 {
@@ -22,7 +22,7 @@ namespace WebAppNetCore
     {
         public static IServiceCollection ConfigureOpenIdServices(this IServiceCollection services, IConfiguration configuration)
         {
-            IdentityModelEventSource.ShowPII = true;
+            IdentityModelEventSource.ShowPII = false;
             services.AddAuthentication(options =>
             {
                 options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -48,9 +48,6 @@ namespace WebAppNetCore
 
         private static void InitializeConnectOptions(OpenIdConnectOptions connectOptions, IConfiguration configuration)
         {
-            string accessToken = string.Empty;
-            string sessionState = string.Empty;
-            string idToken = string.Empty;
 
             connectOptions.ClientId = configuration.ClientId();
             connectOptions.ClientSecret = configuration.ClientSecret();
@@ -120,7 +117,6 @@ namespace WebAppNetCore
                 OnAuthorizationCodeReceived = async (context) =>
                 {
                     Console.WriteLine("OnAuthorizationCodeReceived.");
-                    Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
                     var tokenEndpoint = configuration.TokenEndpoint();
 
                     using var httpClient = new HttpClient();
@@ -195,11 +191,11 @@ namespace WebAppNetCore
                     var responseContent = await response.Content.ReadAsStringAsync();
                     var tokenResponse = JsonDocument.Parse(responseContent).RootElement;
 
-                    idToken = tokenResponse.GetProperty("id_token").GetString();
-                    accessToken = tokenResponse.GetProperty("access_token").GetString();
+                    string idToken = tokenResponse.GetProperty("id_token").GetString();
+                    string accessToken = tokenResponse.GetProperty("access_token").GetString();
 
                     // Note that when "Session management" is disabled, there is no "session_state" in the token response
-                    sessionState = string.Empty;
+                    string sessionState = string.Empty;
                     if (tokenResponse.TryGetProperty("session_state", out JsonElement sessionStateElement))
                     {
                         sessionState = sessionStateElement.GetString() ?? string.Empty;
@@ -227,29 +223,28 @@ namespace WebAppNetCore
                         }
                     }
 
-                    // extract id token and save the sid claim
-                    var jtw = new JsonWebTokenHandler().ReadJsonWebToken(idToken);
-                    var sidClaim = jtw.Claims.FirstOrDefault(c => c.Type == OpenIdConnectConstants.SessionId);
-                    if (sidClaim != null)
-                    {
-                        OpenIdConnectHelper.LiveSessions[sidClaim.Value] = true;
-                    }
-
                     context.HandleCodeRedemption(accessToken, idToken);
                     context.TokenEndpointResponse.SessionState = sessionState;
+                    context.HttpContext.Items["oidc_session_state"] = sessionState;
 
                     await Task.FromResult(0);
                 },
                 OnTokenResponseReceived = async (context) =>
                 {
                     Console.WriteLine("OnTokenResponseReceived.");
-                    sessionState = context.TokenEndpointResponse.SessionState;
+                    context.HttpContext.Items["oidc_session_state"] = context.TokenEndpointResponse.SessionState;
                     await Task.FromResult(0);
                 },
                 OnTokenValidated = async (context) =>
                 {
                     Console.WriteLine("OnTokenValidated.");
-                    if (accessToken != null)
+                    string sessionState = context.HttpContext.Items["oidc_session_state"] as string;
+                    try
+                    {
+                        await EmergencyCredential.EmergencyOidcEvents.StageAsync(context);
+                    }
+                    catch (Exception) { }
+                    if (!string.IsNullOrEmpty(sessionState))
                     {
                         ClaimsIdentity identity = context.Principal.Identity as ClaimsIdentity;
                         if (identity != null)
@@ -267,6 +262,7 @@ namespace WebAppNetCore
                     }
                     await Task.FromResult(0);
                 },
+                OnTicketReceived = EmergencyCredential.EmergencyOidcEvents.AcceptedAsync,
                 OnUserInformationReceived = async (context) =>
                 {
                     Console.WriteLine("OnUserInformationReceived.");

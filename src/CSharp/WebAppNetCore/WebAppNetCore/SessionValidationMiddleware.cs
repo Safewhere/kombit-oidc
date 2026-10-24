@@ -16,6 +16,12 @@ namespace WebAppNetCore
 
         public async Task InvokeAsync(HttpContext context)
         {
+            if (EmergencyCredential.EmergencyMiddleware.IsEmergency(context.User))
+            {
+                await _next(context);
+                return;
+            }
+
             // Check if user is authenticated
             if (context.User.Identity.IsAuthenticated)
             {

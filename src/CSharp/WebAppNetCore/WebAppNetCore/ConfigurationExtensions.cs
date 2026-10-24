@@ -102,7 +102,7 @@ namespace WebAppNetCore
 
         public static OpenIdConnectRedirectBehavior AuthorizationEndpointMethod(this IConfiguration configuration)
         {
-            return configuration["OpenIdConnectOptions:AuthorizationEndpointMethod"] == "POST"? OpenIdConnectRedirectBehavior.FormPost : OpenIdConnectRedirectBehavior.RedirectGet;
+            return configuration["OpenIdConnectOptions:AuthorizationEndpointMethod"] == "POST" ? OpenIdConnectRedirectBehavior.FormPost : OpenIdConnectRedirectBehavior.RedirectGet;
         }
 
         public static string TokenAuthnMethod(this IConfiguration configuration)
@@ -136,6 +136,6 @@ namespace WebAppNetCore
             return configuration["OpenIdConnectOptions:JwtAssertionSigningCertPassword"];
         }
 
-        
+
     }
 }

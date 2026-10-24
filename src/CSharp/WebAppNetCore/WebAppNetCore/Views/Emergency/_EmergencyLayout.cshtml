@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>@ViewData["Title"] &#8212; OIDC sample</title>
+    <link rel="stylesheet" href="~/css/emergency.css" asp-append-version="true" />
+</head>
+<body>
+    <header class="em-topbar">
+        <div class="em-shell">
+            <div class="em-brand">
+                <span class="em-brand-name">OIDC sample <span class="em-brand-sep" aria-hidden="true">/</span> Emergency access</span>
+                <span class="em-tag">Proof of concept</span>
+            </div>
+            @RenderSection("Nav", required: false)
+        </div>
+    </header>
+    @RenderBody()
+    <script src="~/js/emergency-credential.js" asp-append-version="true" defer></script>
+</body>
+</html>
