@@ -41,6 +41,9 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Whether the discovery document has authorization_response_iss_parameter_supported=true (RFC 9207).</summary>
     internal bool AdvertiseIssuerParameter { get; init; }
 
+    /// <summary>Whether the discovery document has mtls_endpoint_aliases (RFC 8705 section 5), as Identify publishes them.</summary>
+    internal bool PublishMtlsEndpointAliases { get; init; } = true;
+
     protected override IWebHostBuilder CreateWebHostBuilder()
     {
         return WebHost.CreateDefaultBuilder(Array.Empty<string>())
@@ -92,14 +95,25 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 });
             services.AddHttpClient(IdentifyHttpClient.Name)
                 .ConfigurePrimaryHttpMessageHandler(() => Identify);
+            // The test server has no TLS. The HttpClient for mutual TLS marks its requests with the x5t#S256 value of the configured
+            // certificate instead, so the stub can see which requests present the certificate.
+            services.AddHttpClient(IdentifyHttpClient.MutualTlsName)
+                .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+                    new ClientCertificateHeaderHandler(serviceProvider.GetRequiredService<MutualTlsClientCertificate>().Thumbprint) { InnerHandler = Identify });
             services.AddSingleton<IStartupFilter, TestSessionEndpointStartupFilter>();
         });
     }
 
     private OpenIdConnectConfiguration CreateProviderConfiguration()
     {
+        var parAlias = PublishParEndpoint ? $", \"pushed_authorization_request_endpoint\": \"{StubIdentify.MtlsParEndpoint}\"" : string.Empty;
+        var mtlsEndpointAliases = PublishMtlsEndpointAliases
+            ? $"\"mtls_endpoint_aliases\": {{ \"token_endpoint\": \"{StubIdentify.MtlsTokenEndpoint}\", \"revocation_endpoint\": \"{StubIdentify.MtlsRevocationEndpoint}\", "
+              + $"\"introspection_endpoint\": \"{StubIdentify.MtlsIntrospectionEndpoint}\"{parAlias} }},"
+            : string.Empty;
         var configuration = OpenIdConnectConfiguration.Create($$"""
             {
+              {{mtlsEndpointAliases}}
               "issuer": "{{ProviderIssuer}}",
               "authorization_endpoint": "{{ProviderAuthorizationEndpoint}}",
               "token_endpoint": "{{StubIdentify.TokenEndpoint}}",
@@ -119,6 +133,25 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         configuration.SigningKeys.Add(Identify.SigningKey);
         return configuration;
+    }
+
+    /// <summary>
+    /// Adds StubIdentify.ClientCertificateHeader to each request, in place of the TLS client certificate of mutual TLS.
+    /// </summary>
+    private sealed class ClientCertificateHeaderHandler : DelegatingHandler
+    {
+        private readonly string certificateThumbprint;
+
+        internal ClientCertificateHeaderHandler(string certificateThumbprint)
+        {
+            this.certificateThumbprint = certificateThumbprint;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.Add(StubIdentify.ClientCertificateHeader, certificateThumbprint);
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     private sealed class RejectingHttpMessageHandler : HttpMessageHandler

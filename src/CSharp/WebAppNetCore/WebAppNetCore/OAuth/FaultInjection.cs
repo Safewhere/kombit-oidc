@@ -165,7 +165,12 @@ namespace WebAppNetCore.OAuth
 
         // The access token as the refresh token, and the revocation of the refresh token instead of the access token.
         AccessTokenAsRefreshToken,
-        RevokeRefreshToken
+        RevokeRefreshToken,
+
+        // Mutual TLS (RFC 8705): a request at the normal endpoint instead of its mTLS alias, without the client certificate.
+        MtlsParAtNormalEndpoint,
+        MtlsTokenAtNormalEndpoint,
+        MtlsRefreshAtNormalEndpoint
     }
 
     public static class FaultInjection
@@ -192,7 +197,8 @@ namespace WebAppNetCore.OAuth
             Fault.ProofWithoutHtm, Fault.ProofWithoutHtu, Fault.ProofWithoutIat, Fault.ReplayParAssertionAtToken, Fault.AssertionNbfFuture,
             Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId, Fault.AssertionHeaderJwk, Fault.AssertionHeaderX5c, Fault.AssertionHeaderJku,
             Fault.ParUnknownScope, Fault.ProofWithoutJwk, Fault.AssertionWithoutIss, Fault.AssertionWithoutSub, Fault.AssertionAudienceTrailingSlash,
-            Fault.AssertionLongLived, Fault.WrongAssertionType, Fault.ShortCodeVerifier, Fault.LongCodeVerifier, Fault.TokenWithoutRedirectUri
+            Fault.AssertionLongLived, Fault.WrongAssertionType, Fault.ShortCodeVerifier, Fault.LongCodeVerifier, Fault.TokenWithoutRedirectUri,
+            Fault.MtlsParAtNormalEndpoint, Fault.MtlsTokenAtNormalEndpoint
         };
 
         public static readonly Fault[] IntrospectionFaults =
@@ -223,7 +229,7 @@ namespace WebAppNetCore.OAuth
         {
             Fault.NewDPoPKeyOnRefresh, Fault.ReplayDPoPProofOnRefresh, Fault.RefreshAsOtherClient, Fault.ReuseRotatedRefreshToken,
             Fault.NoDPoPProof, Fault.ReplayClientAssertion, Fault.RefreshWithoutClientAuthentication, Fault.RefreshWiderScope,
-            Fault.AccessTokenAsRefreshToken
+            Fault.AccessTokenAsRefreshToken, Fault.MtlsRefreshAtNormalEndpoint
         };
 
         private static readonly Dictionary<Fault, string> ExpectedResults = new Dictionary<Fault, string>
@@ -242,7 +248,7 @@ namespace WebAppNetCore.OAuth
             [Fault.MissingAth] = "A UserInfo proof without ath. Expected: HTTP 401 invalid_dpop_proof.",
             [Fault.ReplayDPoPProof] = "The same UserInfo proof in two calls. Expected: HTTP 401 invalid_dpop_proof for the second call.",
             [Fault.NewDPoPKeyOnRefresh] = "A new DPoP key for the refresh request. Expected: success, and the new access token has a new cnf.jkt.",
-            [Fault.ParWithoutClientAuthentication] = "A pushed request with client_id and no client authentication. Expected: invalid_client.",
+            [Fault.ParWithoutClientAuthentication] = "A pushed request with client_id and no client authentication. Expected: invalid_client. With mutual TLS, the request goes to the mTLS alias without the client certificate; expected: HTTP 403 from the web server.",
             [Fault.ParRedirectUriExtraPath] = "The registered redirect URI with an extra path segment /x in the pushed request. Expected: invalid_request.",
             [Fault.ParRedirectUriExtraQuery] = "The registered redirect URI with an extra query ?x=1 in the pushed request. Expected: invalid_request.",
             [Fault.ProofAlgNone] = "A token proof with alg none and no signature. Expected: invalid_dpop_proof.",
@@ -310,9 +316,9 @@ namespace WebAppNetCore.OAuth
             [Fault.UserInfoProofWithoutJti] = "A UserInfo proof without jti. Expected: HTTP 401 invalid_dpop_proof.",
             [Fault.UserInfoProofIatOld] = "A UserInfo proof with iat 90 seconds in the past. Expected: HTTP 401 invalid_dpop_proof.",
             [Fault.AccessTokenInQuery] = "A GET with the DPoP-bound access token in the access_token query parameter and a valid proof, without an Authorization header. Expected: HTTP 401 invalid_token, or HTTP 400 invalid_request when UserInfo does not read the query (verify).",
-            [Fault.IntrospectWithoutClientAuthentication] = "The introspection request with client_id and no client authentication. Expected: invalid_client.",
-            [Fault.RevokeWithoutClientAuthentication] = "The revocation request with client_id and no client authentication. Expected: invalid_client.",
-            [Fault.RefreshWithoutClientAuthentication] = "The refresh request of a confidential client with client_id and no client authentication. Expected: invalid_client.",
+            [Fault.IntrospectWithoutClientAuthentication] = "The introspection request with client_id and no client authentication. Expected: invalid_client. With mutual TLS, the request goes to the mTLS alias without the client certificate; expected: HTTP 403 from the web server.",
+            [Fault.RevokeWithoutClientAuthentication] = "The revocation request with client_id and no client authentication. Expected: invalid_client. With mutual TLS, the request goes to the mTLS alias without the client certificate; expected: HTTP 403 from the web server.",
+            [Fault.RefreshWithoutClientAuthentication] = "The refresh request of a confidential client with client_id and no client authentication. Expected: invalid_client. With mutual TLS, the request goes to the mTLS alias without the client certificate; expected: HTTP 403 from the web server.",
             [Fault.IdTokenAtUserInfo] = "The ID token of the sign-in with the Bearer scheme instead of the access token. Expected: HTTP 401 invalid_token (verify).",
             [Fault.RefreshWiderScope] = "A refresh request with the scope of the sign-in and the scope fapi-fault-not-granted. Expected: invalid_scope, or a token without the extra scope (verify).",
             [Fault.IntrospectAsOtherClient] = "The introspection request as Testing:OtherClientId, with an assertion signed by the client key (private_key_jwt). Expected: an error or active false (verify).",
@@ -333,7 +339,10 @@ namespace WebAppNetCore.OAuth
             [Fault.LongCodeVerifier] = "A code_verifier of 129 characters and its S256 code_challenge. Expected: invalid_grant or invalid_request (verify: RFC 7636 section 4.1 requires 43 to 128 characters).",
             [Fault.TokenWithoutRedirectUri] = "A token request without redirect_uri, although the authorization request had one. Expected: invalid_grant or invalid_request (verify: RFC 6749 section 4.1.3).",
             [Fault.AccessTokenAsRefreshToken] = "A refresh request with the access token of the session as the refresh token. Expected: invalid_grant.",
-            [Fault.RevokeRefreshToken] = "The revocation request with the refresh token (token_type_hint refresh_token) instead of the access token. Expected: success; then a refresh fails with invalid_grant (verify whether the access token is revoked too, RFC 7009 section 2.1)."
+            [Fault.RevokeRefreshToken] = "The revocation request with the refresh token (token_type_hint refresh_token) instead of the access token. Expected: success; then a refresh fails with invalid_grant (verify whether the access token is revoked too, RFC 7009 section 2.1).",
+            [Fault.MtlsParAtNormalEndpoint] = "The pushed request at pushed_authorization_request_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth.",
+            [Fault.MtlsTokenAtNormalEndpoint] = "The token request of the code at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth; with private_key_jwt, an access token that is not bound to the certificate, which the sample rejects.",
+            [Fault.MtlsRefreshAtNormalEndpoint] = "The refresh request at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

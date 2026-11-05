@@ -12,21 +12,21 @@ using Microsoft.IdentityModel.Tokens;
 namespace WebAppNetCore.OAuth
 {
     /// <summary>
-    /// Sends token requests to the token endpoint of the discovery document. With DPoP:BindAccessTokens, each request carries a
-    /// DPoP proof of the key of the sign-in.
+    /// Sends token requests to the token endpoint of the discovery document, or to its mTLS alias with mutual TLS. With
+    /// DPoP:BindAccessTokens, each request carries a DPoP proof of the key of the sign-in.
     /// </summary>
     public sealed class TokenClient
     {
-        private readonly IHttpClientFactory httpClientFactory;
+        private readonly IdentifyBackChannel backChannel;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
         private readonly IConfiguration configuration;
         private readonly DPoPNonceStore dpopNonces;
 
         public TokenClient(
-            IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration, DPoPNonceStore dpopNonces)
+            IdentifyBackChannel backChannel, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration, DPoPNonceStore dpopNonces)
         {
-            this.httpClientFactory = httpClientFactory;
+            this.backChannel = backChannel;
             this.identifyMetadata = identifyMetadata;
             this.clientAuthentication = clientAuthentication;
             this.configuration = configuration;
@@ -104,7 +104,7 @@ namespace WebAppNetCore.OAuth
         public async Task<OpenIdConnectMessage> ClientCredentialsAsync(DPoPKey dpopKey, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            var tokenEndpoint = IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
+            var tokenEndpoint = backChannel.Endpoint(metadata, ClientAuthenticationEndpoint.Token);
             var parameters = fault == Fault.PasswordGrant
                 ? new Dictionary<string, string>
                 {
@@ -124,7 +124,8 @@ namespace WebAppNetCore.OAuth
             string step, Dictionary<string, string> grantParameters, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            var tokenEndpoint = IdentifyMetadata.RequireEndpoint(metadata.TokenEndpoint, "token_endpoint");
+            // With mutual TLS, the mTLS alias. The DPoP proofs use the same URL as htu.
+            var tokenEndpoint = backChannel.Endpoint(metadata, ClientAuthenticationEndpoint.Token, fault);
 
             DPoPKey dpopKey = null;
             if (configuration.DPoPBindAccessTokens())
@@ -263,7 +264,7 @@ namespace WebAppNetCore.OAuth
                 }
                 request.Content = new FormUrlEncodedContent(parameters);
 
-                using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                using var response = await backChannel.SendAsync(ClientAuthenticationEndpoint.Token, request, fault, cancellationToken);
                 dpopNonces.Save(server, response);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -280,14 +281,23 @@ namespace WebAppNetCore.OAuth
                 }
 
                 var tokenResponse = new OpenIdConnectMessage(await response.Content.ReadAsStringAsync(cancellationToken));
-                session?.Trace.AddExchange(step, request, parameters, clientAssertion, (int)response.StatusCode, "token_type=" + tokenResponse.TokenType, new[]
+                var responseDetails = new List<KeyValuePair<string, string>>
                 {
                     ProtocolTrace.Detail("token_type", tokenResponse.TokenType),
                     ProtocolTrace.Detail("expires_in", tokenResponse.ExpiresIn),
                     ProtocolTrace.Detail("scope", tokenResponse.Scope),
                     ProtocolTrace.Detail("refresh_token", string.IsNullOrEmpty(tokenResponse.RefreshToken) ? "(none)" : "(present)"),
                     ProtocolTrace.Detail("id_token", string.IsNullOrEmpty(tokenResponse.IdToken) ? "(none)" : "(present)")
-                });
+                };
+                if (configuration.UsesMutualTls())
+                {
+                    responseDetails.Add(ProtocolTrace.Detail("access token cnf.x5t#S256", AccessTokenInspector.ReadCertificateThumbprint(tokenResponse.AccessToken) ?? "(none)"));
+                }
+
+                session?.Trace.AddExchange(step, request, parameters, clientAssertion, (int)response.StatusCode, "token_type=" + tokenResponse.TokenType, responseDetails);
+
+                // With mutual TLS, the access token must be bound to the client certificate (RFC 8705 section 3).
+                backChannel.CheckCertificateBinding(tokenResponse.AccessToken);
 
                 // An authorization server without DPoP support ignores the proof and issues a bearer token (RFC 9449 section 5).
                 if (dpopKey != null && !string.Equals(tokenResponse.TokenType, "DPoP", StringComparison.OrdinalIgnoreCase))

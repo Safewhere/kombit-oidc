@@ -24,6 +24,20 @@ internal sealed class TestCertificateFile : IDisposable
 
     internal X509Certificate2 PublicCertificate { get; }
 
+    /// <summary>The x5t#S256 value of the certificate (RFC 8705 section 3.1).</summary>
+    internal string Thumbprint => WebAppNetCore.OAuth.MutualTlsClientCertificate.ComputeThumbprint(PublicCertificate);
+
+    /// <summary>Mutual TLS with the certificate file as the TLS client certificate.</summary>
+    internal IDictionary<string, string?> MutualTlsSettings(string tokenAuthnMethod = "self_signed_tls_client_auth")
+    {
+        return new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:TokenAuthnMethod"] = tokenAuthnMethod,
+            ["OpenIdConnectOptions:MutualTls:CertificatePath"] = Path,
+            ["OpenIdConnectOptions:MutualTls:CertificatePassword"] = Password
+        };
+    }
+
     internal IDictionary<string, string?> PrivateKeyJwtSettings()
     {
         return new Dictionary<string, string?>

@@ -38,6 +38,12 @@ namespace WebAppNetCore
 
             services.AddHttpClient(IdentifyHttpClient.Name)
                 .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
+            // The certificate is loaded only when a request uses mutual TLS.
+            services.AddSingleton<MutualTlsClientCertificate>();
+            services.AddHttpClient(IdentifyHttpClient.MutualTlsName)
+                .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+                    HttpClientHandlerProvider.Create(serviceProvider.GetRequiredService<MutualTlsClientCertificate>().Certificate));
+            services.AddSingleton<IdentifyBackChannel>();
             services.AddSingleton<IdentifyMetadata>();
             services.AddSingleton<ClientAuthentication>();
             services.AddSingleton<DPoPNonceStore>();

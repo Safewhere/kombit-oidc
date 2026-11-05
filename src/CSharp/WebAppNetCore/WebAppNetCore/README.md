@@ -58,7 +58,7 @@ The sign-in buttons post a form with an antiforgery token to /Account/SignIn, so
 
 ## Support configurable Token Authentication method
 
-- Edit "appsettings.json" and change the setting TokenAuthnMethod to "client_secret_post", "client_secret_basic", "private_key_jwt", or "none" (a public client: only client_id). 
+- Edit "appsettings.json" and change the setting TokenAuthnMethod to "client_secret_post", "client_secret_basic", "private_key_jwt", "none" (a public client: only client_id), "tls_client_auth", or "self_signed_tls_client_auth" (mutual TLS, see [Mutual TLS](#mutual-tls-rfc-8705)). Another value stops the application at startup.
 
 The same method applies at the PAR endpoint.
 
@@ -104,6 +104,9 @@ All keys are in the `OpenIdConnectOptions` section, except the last one. The def
 | `DPoP:SendDPoPJkt` | `true`, `false`; default `false` | RFC 9449 section 10 | The authorization request, pushed or direct, carries `dpop_jkt`, so Identify binds the code to the key. |
 | `DPoP:SendProofToParEndpoint` | `true`, `false`; default `false` | RFC 9449 section 10.1 | The PAR request carries a DPoP proof, so Identify binds the code to the key. No effect on a direct request. |
 | `DPoP:SigningAlgorithm` | `RS256` to `PS512`; default `PS256` | FAPI 5.4.1 | The `alg` of DPoP proofs. |
+| `MutualTls:UseEndpointAliases` | `true`, `false`; default `false` | RFC 8705 sections 3 and 5 | The PAR, token, revocation, and introspection requests go to the `mtls_endpoint_aliases` with the client certificate, also with a `TokenAuthnMethod` that is not a mutual-TLS method. Identify then binds the access tokens to the certificate. With `tls_client_auth` or `self_signed_tls_client_auth`, this is always on. |
+| `MutualTls:CertificateThumbprint` | a SHA-1 thumbprint; no default | RFC 8705 section 2 | The client certificate in the store My of the current user or of the local computer. Use it for a key that cannot be exported. Set this setting or `MutualTls:CertificatePath`, not both. |
+| `MutualTls:CertificatePath`, `MutualTls:CertificatePassword` | a PFX file and its password; no default | RFC 8705 section 2 | The client certificate in a PFX file. Keep the password in user secrets. |
 | `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
 | `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
 | `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, `AssertionIssuerNotClient`, and `ClientIdNotSubject`. Without a value, these faults fail with a message. |
@@ -117,6 +120,7 @@ These capabilities have no setting:
 - UserInfo uses the DPoP scheme and a proof with `ath` for a DPoP-bound access token, and the Bearer scheme otherwise.
 - After a DPoP nonce challenge (`use_dpop_nonce`), the sample retries once with the nonce (RFC 9449 sections 8 and 9). It keeps the latest `DPoP-Nonce` of each server, also from a successful response, and puts it in the next proofs to that server: one nonce for the PAR and token endpoints, another for UserInfo. Identify does not send nonces, so only the unit tests cover this.
 - Refresh keeps the old refresh token when the response has none, and stores a returned replacement.
+- With mutual TLS, a missing endpoint in `mtls_endpoint_aliases` stops the request; the sample never sends it to the normal endpoint instead. Each access token must have `cnf.x5t#S256` with the thumbprint of the client certificate, otherwise the token response fails. UserInfo has no alias and uses its normal endpoint.
 
 ## Example: the FAPI 2.0 combination
 
@@ -159,6 +163,49 @@ The client keys:
 
 The redirect URI is `https://<host>:<port>/signin-oidc`. It must use HTTPS, because the guide sets `AllowHttpRedirect=false`.
 
+## Mutual TLS (RFC 8705)
+
+FAPI 2.0 allows mTLS as the client authentication instead of `private_key_jwt` (section 5.3.2.1 item 6), and mTLS as the sender binding of the access tokens instead of DPoP (section 5.3.2.1 item 5). The sample supports both:
+
+- **Client authentication**: `TokenAuthnMethod` `self_signed_tls_client_auth` or `tls_client_auth`. The TLS client certificate is the only client credential, and the requests have only `client_id`.
+- **Certificate-bound access tokens with another method**: `MutualTls:UseEndpointAliases=true`, for example with `private_key_jwt`. The requests also have the client assertion.
+
+In both cases, the PAR, token, revocation, and introspection requests go to the endpoints of `mtls_endpoint_aliases` in the discovery document, over a connection with the client certificate (RFC 8705 section 5). Identify binds each access token to the certificate (`cnf.x5t#S256`), and the sample checks the binding. The protocol trace shows the certificate of each request and the `cnf.x5t#S256` of each access token. Identify has no alias for UserInfo, so the sample calls UserInfo as before.
+
+Example for FAPI 2.0 with mTLS client authentication:
+
+```json
+"OpenIdConnectOptions": {
+  "TokenAuthnMethod": "self_signed_tls_client_auth",
+  "ResponseType": "code",
+  "Scope": "openid",
+  "EnableSessionManagement": "false",
+  "PushedAuthorization": "Require",
+  "DPoP": { "BindAccessTokens": false, "SendDPoPJkt": false, "SendProofToParEndpoint": false },
+  "MutualTls": { "CertificateThumbprint": "<thumbprint>" },
+  "ValidIdTokenSigningAlgorithms": "PS256"
+}
+```
+
+The client certificate:
+
+- It needs the extended key usage Client Authentication, and the web server of Identify must trust its chain. For a self-signed certificate, the server must trust the certificate itself.
+- For TLS 1.3, its private key must make RSA-PSS signatures. Keys of the CNG provider "Microsoft Software Key Storage Provider" can. Keys of the older CryptoAPI providers, which many older PFX files use, cannot, and the TLS handshake then fails.
+- This PowerShell command creates a test certificate in the store of the current user. Use its thumbprint in `MutualTls:CertificateThumbprint`:
+
+```powershell
+New-SelfSignedCertificate -Subject "CN=webappnetcore-mtls-client" -CertStoreLocation Cert:\CurrentUser\My -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -Provider "Microsoft Software Key Storage Provider" -KeyExportPolicy NonExportable -KeyUsage DigitalSignature -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.2")
+```
+
+The Identify connection:
+
+- `TokenEndpointAuthenticationMethod` is `SelfSignedTlsClientAuth` or `TlsClientAuth`, with the rule `profile.name=fapi2` when you test the FAPI 2.0 profile. For `MutualTls:UseEndpointAliases` with `private_key_jwt`, it stays `PrivateKeyJwt`.
+- `ClientJwks` contains the client certificate as the `x5c` member of a JWK. Identify compares the TLS client certificate with these certificates, for both methods. With `private_key_jwt` and `MutualTls:UseEndpointAliases`, the JWKS has the assertion key and the TLS certificate; one certificate can be both.
+- `RequireDPoPBoundAccessTokens` can stay `false`, because the access tokens are bound to the certificate.
+- The web server must request client certificates at the mTLS aliases. The Identify configuration guide, section "mTLS client authentication", describes the IIS setup.
+
+With `tls_client_auth` or `self_signed_tls_client_auth`, Identify rejects the requests of the client at the normal token, PAR, revocation, and introspection endpoints. The faults `MtlsParAtNormalEndpoint`, `MtlsTokenAtNormalEndpoint`, and `MtlsRefreshAtNormalEndpoint` show this.
+
 ## Combinations that cannot succeed
 
 The sample sends what the settings say, so that you can see the Identify response. The startup log and the home page warn about the combinations that the sample can detect alone.
@@ -172,6 +219,10 @@ The sample sends what the settings say, so that you can see the Identify respons
 | `DPoP:SigningAlgorithm` not in the rule | `clientJwt.signingAlgorithms` | `invalid_dpop_proof`. |
 | `BindAccessTokens=false` | `RequireDPoPBoundAccessTokens=true` | `invalid_dpop_proof`. |
 | `EnableSessionManagement=true` | `RequirePushedAuthorizationRequests=true` | The session check iframe sends a direct request and gets the Identify error page. |
+| A `TokenAuthnMethod` that is not a mutual-TLS method, and `MutualTls:UseEndpointAliases=false` | `TokenEndpointAuthenticationMethod` `TlsClientAuth` or `SelfSignedTlsClientAuth` | `invalid_client` at PAR and at the token endpoint. |
+| Mutual TLS | The client certificate is not in `ClientJwks` | `invalid_client` at the mTLS aliases. |
+| Mutual TLS | The web server does not trust the client certificate | HTTP 403 from the web server, or a failed TLS handshake. |
+| Mutual TLS | A discovery document without `mtls_endpoint_aliases` | The sample stops the request with an error and sends nothing. |
 
 ## The home page
 
@@ -179,7 +230,7 @@ The sample sends what the settings say, so that you can see the Identify respons
 - **Access token**: `token_type`, the `cnf.jkt` of the access token, the thumbprint of the DPoP key of the sign-in, and whether they match.
 - **Call UserInfo** and **Refresh access token**: a UserInfo call with a fresh proof, and a refresh with the key of the sign-in. The result shows at the top of the page.
 - **Pushed authorization request**: the `request_uri` and `expires_in` of the PAR response.
-- **Protocol trace**: each request of the sign-in, with the redacted form, the decoded client assertion and DPoP proof, and the response. Client secrets, code verifiers, and JWT signatures are not shown.
+- **Protocol trace**: each request of the sign-in, with the redacted form, the decoded client assertion and DPoP proof, the TLS client certificate with mutual TLS, and the response. Client secrets, code verifiers, and JWT signatures are not shown.
 
 The sample keeps the DPoP key and the trace in memory, for one application instance. After a restart, sign in again before you call UserInfo or refresh with DPoP.
 
@@ -293,6 +344,11 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Intros
 | `TokenWithoutRedirectUri` | Sign in | A token request without `redirect_uri`, although the authorization request had one | `invalid_grant` or `invalid_request` (verify, RFC 6749 section 4.1.3) |
 | `AccessTokenAsRefreshToken` | Refresh | A refresh request with the access token of the session as the refresh token. The sample keeps its tokens | `invalid_grant` |
 | `RevokeRefreshToken` | Revoke | The revocation request with the refresh token and `token_type_hint` `refresh_token` instead of the access token | Success; then a refresh fails with `invalid_grant`, and UserInfo shows whether the access token is revoked too (verify, RFC 7009 section 2.1) |
+| `MtlsParAtNormalEndpoint` | Sign in | The pushed request at `pushed_authorization_request_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth` |
+| `MtlsTokenAtNormalEndpoint` | Sign in | The token request of the code at `token_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth`; with `private_key_jwt`, an access token without the certificate binding, which the sample rejects |
+| `MtlsRefreshAtNormalEndpoint` | Refresh | The refresh request at `token_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth` |
+
+With mutual TLS, the faults `ParWithoutClientAuthentication`, `RefreshWithoutClientAuthentication`, `IntrospectWithoutClientAuthentication`, and `RevokeWithoutClientAuthentication` also leave out the client certificate. The request goes to the mTLS alias, and the web server rejects it with HTTP 403. The faults that change only the form, such as `IntrospectWithClientSecret`, keep the certificate, so Identify can still authenticate the client with it.
 
 Signed in, the home page also has **Introspect access token** (RFC 7662) and **Revoke access token** (RFC 7009), with the configured client authentication. **Get client credentials token** (RFC 6749 section 4.4) needs no sign-in: with `DPoP:BindAccessTokens=true` the request has a proof of a new key, and the result says whether the token is bound to it.
 
@@ -300,13 +356,13 @@ Signed in, the home page also has **Introspect access token** (RFC 7662) and **R
 
 | FAPI item | Setting or capability |
 |---|---|
-| 5.3.3.1-1 sender binding | `DPoP:BindAccessTokens=true`; the faults `WrongDPoPKey` and `BearerAtUserInfo` show the rejection |
-| 5.3.3.1-2 client authentication | `TokenAuthnMethod=private_key_jwt`; the certificate password in user secrets |
-| 5.3.3.1-3 token transport | UserInfo with `Authorization: DPoP` |
+| 5.3.3.1-1 sender binding | `DPoP:BindAccessTokens=true`; the faults `WrongDPoPKey` and `BearerAtUserInfo` show the rejection. Or mutual TLS: the sample checks that each access token is bound to the client certificate |
+| 5.3.3.1-2 client authentication | `TokenAuthnMethod=private_key_jwt`, `self_signed_tls_client_auth`, or `tls_client_auth`; the certificate passwords in user secrets |
+| 5.3.3.1-3 token transport | UserInfo with `Authorization: DPoP`, or `Authorization: Bearer` for an access token that is bound only to the client certificate |
 | 5.3.3.1-4 redirect safety | The application redirects only to local paths |
 | 5.3.3.1-5 assertion audience | `ClientAssertion:Audience=Issuer` |
 | 5.3.3.1-6 refresh | **Refresh access token**; replacement storage |
-| 5.3.3.1-7 mTLS aliases | Not applicable; the sample uses DPoP |
+| 5.3.3.1-7 mTLS aliases | With mutual TLS, the PAR, token, revocation, and introspection requests use `mtls_endpoint_aliases`; a missing alias stops the request |
 | 5.3.3.1-8 DPoP nonce | Always supported; unit tests only |
 | 5.3.3.1-9 metadata | Endpoints from discovery |
 | 5.3.3.1-10 trusted issuer | `ClaimsIssuer` in the application configuration |
@@ -326,5 +382,6 @@ Signed in, the home page also has **Introspect access token** (RFC 7662) and **R
 
 - The DPoP key and the trace are in memory, for one application instance.
 - Identify does not support the DPoP server nonce, ES256, EdDSA, or request objects inside PAR, so the sample does not use them. The nonce retry is covered by unit tests only.
-- The sample does not use mTLS, and it has no resource server of its own. Identify UserInfo is the DPoP-protected resource.
+- The sample has no resource server of its own. Identify UserInfo is the protected resource. Identify has no mTLS alias for UserInfo, so the sample calls UserInfo without the client certificate.
+- Identify compares the TLS client certificate with the `x5c` certificates of the client JWKS, also for `tls_client_auth`. It does not use the subject registration of RFC 8705 section 2.1.2 (`tls_client_auth_subject_dn` and the SAN parameters).
 - OIDC session management does not work together with a connection that requires PAR.

@@ -19,16 +19,16 @@ namespace WebAppNetCore.OAuth
     {
         private const string Step = "Pushed authorization request";
 
-        private readonly IHttpClientFactory httpClientFactory;
+        private readonly IdentifyBackChannel backChannel;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
         private readonly IConfiguration configuration;
         private readonly DPoPNonceStore dpopNonces;
 
         public PushedAuthorizationClient(
-            IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration, DPoPNonceStore dpopNonces)
+            IdentifyBackChannel backChannel, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration, DPoPNonceStore dpopNonces)
         {
-            this.httpClientFactory = httpClientFactory;
+            this.backChannel = backChannel;
             this.identifyMetadata = identifyMetadata;
             this.clientAuthentication = clientAuthentication;
             this.configuration = configuration;
@@ -39,7 +39,8 @@ namespace WebAppNetCore.OAuth
             OpenIdConnectMessage authorizationRequest, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            var parEndpoint = IdentifyMetadata.RequireEndpoint(metadata.PushedAuthorizationRequestEndpoint, "pushed_authorization_request_endpoint");
+            // With mutual TLS, the mTLS alias. The DPoP proof below uses the same URL as htu.
+            var parEndpoint = backChannel.Endpoint(metadata, ClientAuthenticationEndpoint.PushedAuthorizationRequest, fault);
 
             // With a proof, Identify binds the code to the proof key, as with dpop_jkt. With both, the keys must be the same.
             var dpopKey = configuration.DPoPSendProofToParEndpoint() ? session?.DPoPKey : null;
@@ -67,7 +68,7 @@ namespace WebAppNetCore.OAuth
                 }
                 request.Content = new FormUrlEncodedContent(parameters.Concat(repeated));
 
-                using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                using var response = await backChannel.SendAsync(ClientAuthenticationEndpoint.PushedAuthorizationRequest, request, fault, cancellationToken);
                 dpopNonces.Save(server, response);
                 if (!response.IsSuccessStatusCode)
                 {

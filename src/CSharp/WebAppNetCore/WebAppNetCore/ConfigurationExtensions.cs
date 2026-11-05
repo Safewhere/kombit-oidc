@@ -99,15 +99,68 @@ namespace WebAppNetCore
             return configuration["OpenIdConnectOptions:AuthorizationEndpointMethod"] == "POST"? OpenIdConnectRedirectBehavior.FormPost : OpenIdConnectRedirectBehavior.RedirectGet;
         }
 
+        // The client authentication methods of the sample. tls_client_auth and self_signed_tls_client_auth are the mutual-TLS methods of RFC 8705 section 2.
+        private static readonly string[] TokenAuthnMethods =
+        {
+            "client_secret_post", "client_secret_basic", "private_key_jwt", "none", "tls_client_auth", "self_signed_tls_client_auth"
+        };
+
         public static string TokenAuthnMethod(this IConfiguration configuration)
         {
-            var method = configuration["OpenIdConnectOptions:TokenAuthnMethod"];
+            const string key = "OpenIdConnectOptions:TokenAuthnMethod";
+            var method = configuration[key];
             if (string.IsNullOrEmpty(method))
             {
                 return "client_secret_post";
             }
 
+            if (!TokenAuthnMethods.Contains(method, StringComparer.Ordinal))
+            {
+                throw InvalidSetting(key, method, string.Join(", ", TokenAuthnMethods));
+            }
+
             return method;
+        }
+
+        /// <summary>
+        /// The client authenticates with its TLS client certificate (RFC 8705 section 2): TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth.
+        /// </summary>
+        public static bool UsesMutualTlsClientAuthentication(this IConfiguration configuration)
+        {
+            var method = configuration.TokenAuthnMethod();
+            return method == "tls_client_auth" || method == "self_signed_tls_client_auth";
+        }
+
+        /// <summary>
+        /// The PAR, token, revocation, and introspection requests go to the mtls_endpoint_aliases of the discovery document, over a
+        /// connection with the client certificate (RFC 8705 section 5). This is always true with a mutual-TLS method. For another
+        /// method, MutualTls:UseEndpointAliases turns it on, so that Identify binds the access tokens to the certificate (RFC 8705 section 3).
+        /// </summary>
+        public static bool UsesMutualTls(this IConfiguration configuration)
+        {
+            return configuration.UsesMutualTlsClientAuthentication() || ParseBool(configuration, "OpenIdConnectOptions:MutualTls:UseEndpointAliases");
+        }
+
+        /// <summary>
+        /// The thumbprint of the client certificate in the store My of the current user or of the local computer. Use it for a key that
+        /// cannot be exported. Set this setting or MutualTls:CertificatePath, not both.
+        /// </summary>
+        public static string MutualTlsCertificateThumbprint(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:MutualTls:CertificateThumbprint"];
+        }
+
+        /// <summary>
+        /// The PFX file of the client certificate, with MutualTls:CertificatePassword.
+        /// </summary>
+        public static string MutualTlsCertificatePath(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:MutualTls:CertificatePath"];
+        }
+
+        public static string MutualTlsCertificatePassword(this IConfiguration configuration)
+        {
+            return configuration["OpenIdConnectOptions:MutualTls:CertificatePassword"];
         }
 
         public static string IdTokenDecryptionCertPath(this IConfiguration configuration)
@@ -250,6 +303,14 @@ namespace WebAppNetCore
         /// </summary>
         public static void ValidateBuildingBlockSettings(this IConfiguration configuration)
         {
+            configuration.TokenAuthnMethod();
+            if (configuration.UsesMutualTls())
+            {
+                using (MutualTlsClientCertificate.Load(configuration))
+                {
+                }
+            }
+
             configuration.EnableFaultInjection();
             configuration.ValidIdTokenSigningAlgorithms();
             configuration.ClientAssertionAudience();
@@ -275,6 +336,10 @@ namespace WebAppNetCore
                 blocks.Add(new KeyValuePair<string, string>("Client assertion", string.Format(
                     "aud={0}, alg={1}", configuration.ClientAssertionAudience(), configuration.ClientAssertionSigningAlgorithm())));
             }
+
+            blocks.Add(new KeyValuePair<string, string>("Mutual TLS endpoint aliases (MutualTls)", configuration.UsesMutualTls()
+                ? string.Format("True, certificate from {0}", string.IsNullOrEmpty(configuration.MutualTlsCertificateThumbprint()) ? "file" : "store, thumbprint " + configuration.MutualTlsCertificateThumbprint())
+                : "False"));
 
             blocks.Add(new KeyValuePair<string, string>("Pushed authorization requests (PushedAuthorization)", configuration.PushedAuthorization().ToString()));
             blocks.Add(new KeyValuePair<string, string>("DPoP-bound access tokens (DPoP:BindAccessTokens)", configuration.DPoPBindAccessTokens().ToString()));

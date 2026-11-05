@@ -1,9 +1,21 @@
 ﻿using System.Net.Http;
+using System.Security.Cryptography.X509Certificates;
 
 namespace WebAppNetCore
 {
     public static class HttpClientHandlerProvider
     {
+        /// <summary>
+        /// A handler that presents the client certificate in the TLS handshake, for mutual TLS (RFC 8705).
+        /// </summary>
+        public static HttpClientHandler Create(X509Certificate2 clientCertificate)
+        {
+            var handler = Create();
+            handler.ClientCertificateOptions = ClientCertificateOption.Manual;
+            handler.ClientCertificates.Add(clientCertificate);
+            return handler;
+        }
+
         public static HttpClientHandler Create()
         {
 #if DEBUG

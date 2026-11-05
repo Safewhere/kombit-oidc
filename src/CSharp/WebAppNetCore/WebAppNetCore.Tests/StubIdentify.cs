@@ -25,6 +25,26 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal const string IntrospectionEndpoint = Issuer + "/introspect.idp";
     internal const string RevocationEndpoint = Issuer + "/revoke.idp";
     internal const string EndSessionEndpoint = Domain + "/runtime/openidconnect/logout.idp";
+
+    // The mTLS endpoint aliases of mtls_endpoint_aliases (RFC 8705 section 5), with the same layout as an Identify Runtime.
+    internal const string MtlsTokenEndpoint = Issuer + "/mtls/token.idp";
+    internal const string MtlsParEndpoint = Issuer + "/mtls/par.idp";
+    internal const string MtlsIntrospectionEndpoint = Issuer + "/mtls/introspect.idp";
+    internal const string MtlsRevocationEndpoint = Issuer + "/mtls/revoke.idp";
+
+    /// <summary>
+    /// The header that the test HttpClient for mutual TLS adds in place of the TLS client certificate. Its value is the x5t#S256
+    /// value of the certificate.
+    /// </summary>
+    internal const string ClientCertificateHeader = "X-Test-Client-Certificate";
+
+    private static readonly Dictionary<string, string> NormalEndpointsOfAliases = new()
+    {
+        [MtlsTokenEndpoint] = TokenEndpoint,
+        [MtlsParEndpoint] = ParEndpoint,
+        [MtlsIntrospectionEndpoint] = IntrospectionEndpoint,
+        [MtlsRevocationEndpoint] = RevocationEndpoint
+    };
     internal const string RequestUri = "urn:ietf:params:oauth:request_uri:stub-request";
     internal const string Subject = "user-1";
     internal const string SessionId = "session-1";
@@ -49,6 +69,12 @@ internal sealed class StubIdentify : HttpMessageHandler
     /// The nonce of an ID token for a code that was not registered with RegisterCode.
     /// </summary>
     internal string? Nonce { get; set; }
+
+    /// <summary>
+    /// Whether the default token response binds the access token to the client certificate of a request at an mTLS alias
+    /// (cnf.x5t#S256), as Identify does.
+    /// </summary>
+    internal bool BindAccessTokensToCertificate { get; set; } = true;
 
     /// <summary>The access tokens that the default token response issued, by authorization code.</summary>
     internal ConcurrentDictionary<string, string> AccessTokensByCode { get; } = new();
@@ -99,7 +125,7 @@ internal sealed class StubIdentify : HttpMessageHandler
         return IssueToken(claims);
     }
 
-    internal string IssueAccessToken(string? jkt = null)
+    internal string IssueAccessToken(string? jkt = null, string? certificateThumbprint = null)
     {
         var claims = new Dictionary<string, object>
         {
@@ -107,9 +133,20 @@ internal sealed class StubIdentify : HttpMessageHandler
             ["scope"] = "openid",
             ["jti"] = Guid.NewGuid().ToString("N")
         };
+        var confirmation = new Dictionary<string, object>();
         if (jkt != null)
         {
-            claims["cnf"] = new Dictionary<string, object> { ["jkt"] = jkt };
+            confirmation["jkt"] = jkt;
+        }
+
+        if (certificateThumbprint != null)
+        {
+            confirmation["x5t#S256"] = certificateThumbprint;
+        }
+
+        if (confirmation.Count > 0)
+        {
+            claims["cnf"] = confirmation;
         }
 
         return IssueToken(claims);
@@ -136,7 +173,22 @@ internal sealed class StubIdentify : HttpMessageHandler
             requests.Add(recorded);
         }
 
-        return recorded.Url switch
+        var endpoint = recorded.Url;
+        if (NormalEndpointsOfAliases.TryGetValue(recorded.Url, out var normalEndpoint))
+        {
+            // Like IIS with SslRequireCert: an mTLS alias rejects a request without a client certificate before Identify sees it.
+            if (recorded.Header(ClientCertificateHeader) == null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("<html><body><h1>403.7 - Forbidden: client certificate required</h1></body></html>", Encoding.UTF8, "text/html")
+                };
+            }
+
+            endpoint = normalEndpoint;
+        }
+
+        return endpoint switch
         {
             ParEndpoint => (ParResponder ?? DefaultParResponse)(recorded),
             TokenEndpoint => (TokenResponder ?? DefaultTokenResponse)(recorded),
@@ -164,7 +216,9 @@ internal sealed class StubIdentify : HttpMessageHandler
         // Like Identify, a request with a DPoP proof gets an access token that is bound to the proof key.
         var proof = request.Header("DPoP");
         var jkt = proof == null ? null : DPoPProof.Read(proof).Thumbprint;
-        var accessToken = IssueAccessToken(jkt);
+        // Like Identify, a request that the client certificate authenticated gets an access token that is bound to the certificate.
+        var certificateThumbprint = BindAccessTokensToCertificate ? request.Header(ClientCertificateHeader) : null;
+        var accessToken = IssueAccessToken(jkt, certificateThumbprint);
         if (code != null)
         {
             AccessTokensByCode[code] = accessToken;

@@ -71,8 +71,9 @@ internal static class SignInFlow
 
         var browserParameters = QueryHelpers.ParseQuery(location.Query)
             .ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.Ordinal);
+        // With mutual TLS, the pushed request goes to the mTLS alias of the PAR endpoint.
         var parameters = browserParameters.ContainsKey("request_uri")
-            ? factory.Identify.RequestsTo(StubIdentify.ParEndpoint).Last().Form
+            ? factory.Identify.Requests.Last(r => r.Url == StubIdentify.ParEndpoint || r.Url == StubIdentify.MtlsParEndpoint).Form
             : browserParameters;
         return new AuthorizationRequest(location, browserParameters, parameters);
     }

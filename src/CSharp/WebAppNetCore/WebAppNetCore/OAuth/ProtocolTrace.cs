@@ -15,6 +15,11 @@ namespace WebAppNetCore.OAuth
     /// </summary>
     public sealed class ProtocolTrace
     {
+        /// <summary>
+        /// The TLS client certificate of a request with mutual TLS, which IdentifyBackChannel sets. The trace shows it.
+        /// </summary>
+        public static readonly HttpRequestOptionsKey<string> ClientCertificateKey = new("WebAppNetCore.ClientCertificate");
+
         private const int MaximumEntries = 50;
         private static readonly JsonSerializerOptions IndentedJson = new JsonSerializerOptions
         {
@@ -62,6 +67,11 @@ namespace WebAppNetCore.OAuth
             IEnumerable<KeyValuePair<string, string>> responseDetails = null)
         {
             var details = new List<KeyValuePair<string, string>> { Detail("Request", request.Method + " " + RedactQuery(request.RequestUri)) };
+            if (request.Options.TryGetValue(ClientCertificateKey, out var clientCertificate))
+            {
+                details.Add(Detail("TLS client certificate", clientCertificate));
+            }
+
             if (request.Headers.Authorization != null)
             {
                 var credentials = string.Equals(request.Headers.Authorization.Scheme, "Basic", StringComparison.OrdinalIgnoreCase)

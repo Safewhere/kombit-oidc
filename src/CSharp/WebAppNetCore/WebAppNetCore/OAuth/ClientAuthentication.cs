@@ -70,6 +70,13 @@ namespace WebAppNetCore.OAuth
                     parameters["client_id"] = clientId;
                     return null;
 
+                case "tls_client_auth":
+                case "self_signed_tls_client_auth":
+                    // RFC 8705 section 2: the TLS client certificate authenticates the client, and the request has only client_id.
+                    // IdentifyBackChannel sends the request over the connection with the certificate.
+                    parameters["client_id"] = clientId;
+                    return null;
+
                 default: // private_key_jwt
                     var clientAssertion = CreateClientAssertion(metadata, fault, clientId);
                     // WrongAssertionType: a valid assertion that the type names as another kind of assertion.

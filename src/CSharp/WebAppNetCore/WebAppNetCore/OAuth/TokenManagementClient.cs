@@ -11,18 +11,18 @@ namespace WebAppNetCore.OAuth
 {
     /// <summary>
     /// Sends token introspection (RFC 7662) and token revocation (RFC 7009) requests to the endpoints of the discovery document,
-    /// with the configured client authentication.
+    /// or to their mTLS aliases with mutual TLS, with the configured client authentication.
     /// </summary>
     public sealed class TokenManagementClient
     {
-        private readonly IHttpClientFactory httpClientFactory;
+        private readonly IdentifyBackChannel backChannel;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly ClientAuthentication clientAuthentication;
         private readonly IConfiguration configuration;
 
-        public TokenManagementClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration)
+        public TokenManagementClient(IdentifyBackChannel backChannel, IdentifyMetadata identifyMetadata, ClientAuthentication clientAuthentication, IConfiguration configuration)
         {
-            this.httpClientFactory = httpClientFactory;
+            this.backChannel = backChannel;
             this.identifyMetadata = identifyMetadata;
             this.clientAuthentication = clientAuthentication;
             this.configuration = configuration;
@@ -36,8 +36,7 @@ namespace WebAppNetCore.OAuth
         public async Task<string> IntrospectAsync(string accessToken, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            var endpoint = IdentifyMetadata.RequireEndpoint(metadata.IntrospectionEndpoint, "introspection_endpoint");
-            using var response = await SendAsync("Introspection request", "introspection endpoint", endpoint, accessToken, session, fault, metadata, cancellationToken);
+            using var response = await SendAsync("Introspection request", "introspection endpoint", ClientAuthenticationEndpoint.Introspection, accessToken, session, fault, metadata, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             return ProtocolTrace.FormatJson(body);
         }
@@ -50,16 +49,15 @@ namespace WebAppNetCore.OAuth
         public async Task RevokeAsync(string token, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            var endpoint = IdentifyMetadata.RequireEndpoint(metadata.RevocationEndpoint, "revocation_endpoint");
-            using var response = await SendAsync("Revocation request", "revocation endpoint", endpoint, token, session, fault, metadata, cancellationToken);
+            using var response = await SendAsync("Revocation request", "revocation endpoint", ClientAuthenticationEndpoint.Revocation, token, session, fault, metadata, cancellationToken);
         }
 
         private async Task<HttpResponseMessage> SendAsync(
-            string step, string endpointName, string endpoint, string token, ClientSession session, Fault fault, OpenIdConnectConfiguration metadata, CancellationToken cancellationToken)
+            string step, string endpointName, ClientAuthenticationEndpoint endpoint, string token, ClientSession session, Fault fault, OpenIdConnectConfiguration metadata, CancellationToken cancellationToken)
         {
             var tokenTypeHint = fault == Fault.RevokeRefreshToken ? "refresh_token" : "access_token";
             var parameters = new Dictionary<string, string> { { "token", token }, { "token_type_hint", tokenTypeHint } };
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            using var request = new HttpRequestMessage(HttpMethod.Post, backChannel.Endpoint(metadata, endpoint, fault));
             string clientAssertion = null;
             if (fault == Fault.IntrospectWithClientSecret || fault == Fault.RevokeWithClientSecret)
             {
@@ -84,7 +82,7 @@ namespace WebAppNetCore.OAuth
             }
 
             request.Content = new FormUrlEncodedContent(parameters);
-            var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+            var response = await backChannel.SendAsync(endpoint, request, fault, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 var error = await OAuthErrorResponseException.CreateAsync(endpointName, response);
@@ -105,6 +103,19 @@ namespace WebAppNetCore.OAuth
         /// </summary>
         public static string ReadConfirmationThumbprint(string accessToken)
         {
+            return ReadConfirmationMember(accessToken, "jkt");
+        }
+
+        /// <summary>
+        /// The cnf.x5t#S256 claim of a JWT access token (RFC 8705 section 3.1), or null.
+        /// </summary>
+        public static string ReadCertificateThumbprint(string accessToken)
+        {
+            return ReadConfirmationMember(accessToken, "x5t#S256");
+        }
+
+        private static string ReadConfirmationMember(string accessToken, string member)
+        {
             var handler = new JsonWebTokenHandler();
             if (string.IsNullOrEmpty(accessToken) || !handler.CanReadToken(accessToken))
             {
@@ -114,8 +125,8 @@ namespace WebAppNetCore.OAuth
             var token = handler.ReadJsonWebToken(accessToken);
             return token.TryGetPayloadValue<JsonElement>("cnf", out var confirmation)
                 && confirmation.ValueKind == JsonValueKind.Object
-                && confirmation.TryGetProperty("jkt", out var jkt)
-                && jkt.ValueKind == JsonValueKind.String ? jkt.GetString() : null;
+                && confirmation.TryGetProperty(member, out var value)
+                && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
         }
     }
 }
