@@ -61,7 +61,7 @@ public sealed class MutualTlsTests : IDisposable
     }
 
     [Fact]
-    public async Task TheAccessTokenOfTheSessionIsBoundToTheCertificateAndUserInfoHasNoCertificate()
+    public async Task TheAccessTokenOfTheSessionIsBoundToTheCertificateAndUserInfoGoesToTheAliasWithTheCertificate()
     {
         using var factory = new TestWebApplicationFactory(settings: Settings());
         using var client = SignInFlow.CreateHttpsClient(factory);
@@ -70,9 +70,57 @@ public sealed class MutualTlsTests : IDisposable
 
         var session = await TestSession.GetAsync(client);
         Assert.Equal(certificate.Thumbprint, AccessTokenInspector.ReadCertificateThumbprint(session.Tokens["access_token"]));
-        // Identify has no mTLS alias for UserInfo.
+        var userInfo = Assert.Single(factory.Identify.RequestsTo(StubIdentify.MtlsUserInfoEndpoint));
+        Assert.Equal(certificate.Thumbprint, userInfo.Header(StubIdentify.ClientCertificateHeader));
+        Assert.Equal("Bearer " + session.Tokens["access_token"], userInfo.Header("Authorization"));
+        Assert.Empty(factory.Identify.RequestsTo(StubIdentify.UserInfoEndpoint));
+    }
+
+    [Fact]
+    public async Task WithoutAUserInfoAliasUserInfoGoesToTheNormalEndpointWithoutTheCertificate()
+    {
+        using var factory = new TestWebApplicationFactory(settings: Settings()) { PublishMtlsUserInfoAlias = false };
+        factory.Identify.CheckCertificateBindingAtUserInfo = false;
+        using var client = SignInFlow.CreateHttpsClient(factory);
+
+        await SignInFlow.SignInAsync(client, factory);
+
         var userInfo = Assert.Single(factory.Identify.RequestsTo(StubIdentify.UserInfoEndpoint));
         Assert.Null(userInfo.Header(StubIdentify.ClientCertificateHeader));
+        Assert.Empty(factory.Identify.RequestsTo(StubIdentify.MtlsUserInfoEndpoint));
+    }
+
+    [Fact]
+    public async Task MtlsUserInfoAtNormalEndpointSendsUserInfoToTheNormalEndpointWithoutTheCertificate()
+    {
+        using var factory = new TestWebApplicationFactory(settings: Settings(faults: true));
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        await SignInFlow.SignInAsync(client, factory);
+
+        using (await SignInFlow.PostFormAsync(client, "/Account/UserInfo", WithFault(Fault.MtlsUserInfoAtNormalEndpoint)))
+        {
+        }
+
+        var userInfo = Assert.Single(factory.Identify.RequestsTo(StubIdentify.UserInfoEndpoint));
+        Assert.Null(userInfo.Header(StubIdentify.ClientCertificateHeader));
+        Assert.Contains("The UserInfo endpoint returned HTTP 401: invalid_token", await HomePageAsync(client));
+    }
+
+    [Fact]
+    public async Task MtlsUserInfoAtNormalEndpointWithoutMutualTlsSendsNothing()
+    {
+        var settings = new Dictionary<string, string?> { ["Testing:EnableFaultInjection"] = "true" };
+        using var factory = new TestWebApplicationFactory(settings: settings);
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        await SignInFlow.SignInAsync(client, factory);
+        var requestsBefore = factory.Identify.Requests.Count;
+
+        using (await SignInFlow.PostFormAsync(client, "/Account/UserInfo", WithFault(Fault.MtlsUserInfoAtNormalEndpoint)))
+        {
+        }
+
+        Assert.Contains("The fault MtlsUserInfoAtNormalEndpoint needs mutual TLS", await HomePageAsync(client));
+        Assert.Equal(requestsBefore, factory.Identify.Requests.Count);
     }
 
     [Fact]

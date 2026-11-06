@@ -44,6 +44,9 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Whether the discovery document has mtls_endpoint_aliases (RFC 8705 section 5), as Identify publishes them.</summary>
     internal bool PublishMtlsEndpointAliases { get; init; } = true;
 
+    /// <summary>Whether mtls_endpoint_aliases has userinfo_endpoint. An older Identify has no UserInfo alias.</summary>
+    internal bool PublishMtlsUserInfoAlias { get; init; } = true;
+
     protected override IWebHostBuilder CreateWebHostBuilder()
     {
         return WebHost.CreateDefaultBuilder(Array.Empty<string>())
@@ -107,9 +110,10 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     private OpenIdConnectConfiguration CreateProviderConfiguration()
     {
         var parAlias = PublishParEndpoint ? $", \"pushed_authorization_request_endpoint\": \"{StubIdentify.MtlsParEndpoint}\"" : string.Empty;
+        var userInfoAlias = PublishMtlsUserInfoAlias ? $", \"userinfo_endpoint\": \"{StubIdentify.MtlsUserInfoEndpoint}\"" : string.Empty;
         var mtlsEndpointAliases = PublishMtlsEndpointAliases
             ? $"\"mtls_endpoint_aliases\": {{ \"token_endpoint\": \"{StubIdentify.MtlsTokenEndpoint}\", \"revocation_endpoint\": \"{StubIdentify.MtlsRevocationEndpoint}\", "
-              + $"\"introspection_endpoint\": \"{StubIdentify.MtlsIntrospectionEndpoint}\"{parAlias} }},"
+              + $"\"introspection_endpoint\": \"{StubIdentify.MtlsIntrospectionEndpoint}\"{parAlias}{userInfoAlias} }},"
             : string.Empty;
         var configuration = OpenIdConnectConfiguration.Create($$"""
             {

@@ -3,9 +3,11 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Tests;
 
@@ -31,6 +33,7 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal const string MtlsParEndpoint = Issuer + "/mtls/par.idp";
     internal const string MtlsIntrospectionEndpoint = Issuer + "/mtls/introspect.idp";
     internal const string MtlsRevocationEndpoint = Issuer + "/mtls/revoke.idp";
+    internal const string MtlsUserInfoEndpoint = Issuer + "/mtls/userinfo.idp";
 
     /// <summary>
     /// The header that the test HttpClient for mutual TLS adds in place of the TLS client certificate. Its value is the x5t#S256
@@ -43,7 +46,8 @@ internal sealed class StubIdentify : HttpMessageHandler
         [MtlsTokenEndpoint] = TokenEndpoint,
         [MtlsParEndpoint] = ParEndpoint,
         [MtlsIntrospectionEndpoint] = IntrospectionEndpoint,
-        [MtlsRevocationEndpoint] = RevocationEndpoint
+        [MtlsRevocationEndpoint] = RevocationEndpoint,
+        [MtlsUserInfoEndpoint] = UserInfoEndpoint
     };
     internal const string RequestUri = "urn:ietf:params:oauth:request_uri:stub-request";
     internal const string Subject = "user-1";
@@ -75,6 +79,13 @@ internal sealed class StubIdentify : HttpMessageHandler
     /// (cnf.x5t#S256), as Identify does.
     /// </summary>
     internal bool BindAccessTokensToCertificate { get; set; } = true;
+
+    /// <summary>
+    /// Whether the default UserInfo response rejects an access token with cnf.x5t#S256 that comes without the client certificate of
+    /// that thumbprint, with HTTP 401 invalid_token (RFC 8705 section 3), as Identify does. An older Identify without the UserInfo
+    /// alias accepts such a token.
+    /// </summary>
+    internal bool CheckCertificateBindingAtUserInfo { get; set; } = true;
 
     /// <summary>The access tokens that the default token response issued, by authorization code.</summary>
     internal ConcurrentDictionary<string, string> AccessTokensByCode { get; } = new();
@@ -237,6 +248,16 @@ internal sealed class StubIdentify : HttpMessageHandler
 
     internal HttpResponseMessage DefaultUserInfoResponse(RecordedRequest request)
     {
+        var authorization = request.Header("Authorization");
+        var accessToken = authorization?.Split(' ', 2).ElementAtOrDefault(1) ?? request.Form.GetValueOrDefault("access_token");
+        var boundThumbprint = accessToken == null ? null : AccessTokenInspector.ReadCertificateThumbprint(accessToken);
+        if (CheckCertificateBindingAtUserInfo && boundThumbprint != null && boundThumbprint != request.Header(ClientCertificateHeader))
+        {
+            var response = OAuthError(HttpStatusCode.Unauthorized, "invalid_token", "The specified access token is not valid.");
+            response.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue("Bearer", "error=\"invalid_token\""));
+            return response;
+        }
+
         return Json(HttpStatusCode.OK, new Dictionary<string, object> { ["sub"] = Subject, ["email"] = "user@provider.test" });
     }
 

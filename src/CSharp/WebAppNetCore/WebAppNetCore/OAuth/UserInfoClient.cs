@@ -20,14 +20,14 @@ namespace WebAppNetCore.OAuth
     {
         private const string Step = "UserInfo request";
 
-        private readonly IHttpClientFactory httpClientFactory;
+        private readonly IdentifyBackChannel backChannel;
         private readonly IdentifyMetadata identifyMetadata;
         private readonly IConfiguration configuration;
         private readonly DPoPNonceStore dpopNonces;
 
-        public UserInfoClient(IHttpClientFactory httpClientFactory, IdentifyMetadata identifyMetadata, IConfiguration configuration, DPoPNonceStore dpopNonces)
+        public UserInfoClient(IdentifyBackChannel backChannel, IdentifyMetadata identifyMetadata, IConfiguration configuration, DPoPNonceStore dpopNonces)
         {
-            this.httpClientFactory = httpClientFactory;
+            this.backChannel = backChannel;
             this.identifyMetadata = identifyMetadata;
             this.configuration = configuration;
             this.dpopNonces = dpopNonces;
@@ -35,13 +35,15 @@ namespace WebAppNetCore.OAuth
 
         /// <summary>
         /// Calls UserInfo with the scheme of the token type: DPoP with a proof for a DPoP-bound access token (RFC 9449 section 7),
-        /// and Bearer otherwise. Returns null when the discovery document has no UserInfo endpoint or when there is no access token,
-        /// as the handler does.
+        /// and Bearer otherwise. With mutual TLS, the request goes to the UserInfo alias with the client certificate
+        /// (IdentifyBackChannel.UserInfoEndpoint). Returns null when the discovery document has no UserInfo endpoint or when there is
+        /// no access token, as the handler does.
         /// </summary>
         public async Task<UserInfoResponse> GetAsync(string accessToken, string tokenType, ClientSession session, Fault fault, CancellationToken cancellationToken)
         {
             var metadata = await identifyMetadata.GetAsync(cancellationToken);
-            var userInfoEndpoint = metadata.UserInfoEndpoint;
+            var target = backChannel.UserInfoEndpoint(metadata, fault);
+            var userInfoEndpoint = target.Endpoint;
             if (string.IsNullOrEmpty(userInfoEndpoint) || string.IsNullOrEmpty(accessToken))
             {
                 return null;
@@ -86,7 +88,7 @@ namespace WebAppNetCore.OAuth
                     request.Headers.Authorization = new AuthenticationHeaderValue(proofKey != null ? "DPoP" : "Bearer", accessToken);
                 }
 
-                using var response = await httpClientFactory.CreateClient(IdentifyHttpClient.Name).SendAsync(request, cancellationToken);
+                using var response = await backChannel.SendAsync(request, target.SendsCertificate, cancellationToken);
                 dpopNonces.Save(server, response);
                 if (fault == Fault.ReplayDPoPProof && proof != null && replayedProof == null)
                 {

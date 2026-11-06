@@ -170,7 +170,8 @@ namespace WebAppNetCore.OAuth
         // Mutual TLS (RFC 8705): a request at the normal endpoint instead of its mTLS alias, without the client certificate.
         MtlsParAtNormalEndpoint,
         MtlsTokenAtNormalEndpoint,
-        MtlsRefreshAtNormalEndpoint
+        MtlsRefreshAtNormalEndpoint,
+        MtlsUserInfoAtNormalEndpoint
     }
 
     public static class FaultInjection
@@ -222,7 +223,7 @@ namespace WebAppNetCore.OAuth
             Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth,
             Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof,
             Fault.UserInfoProofAlgNone, Fault.UserInfoProofSignatureOtherKey, Fault.UserInfoProofWithoutJti, Fault.UserInfoProofIatOld,
-            Fault.AccessTokenInQuery, Fault.IdTokenAtUserInfo
+            Fault.AccessTokenInQuery, Fault.IdTokenAtUserInfo, Fault.MtlsUserInfoAtNormalEndpoint
         };
 
         public static readonly Fault[] RefreshFaults =
@@ -342,7 +343,8 @@ namespace WebAppNetCore.OAuth
             [Fault.RevokeRefreshToken] = "The revocation request with the refresh token (token_type_hint refresh_token) instead of the access token. Expected: success; then a refresh fails with invalid_grant (verify whether the access token is revoked too, RFC 7009 section 2.1).",
             [Fault.MtlsParAtNormalEndpoint] = "The pushed request at pushed_authorization_request_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth.",
             [Fault.MtlsTokenAtNormalEndpoint] = "The token request of the code at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth; with private_key_jwt, an access token that is not bound to the certificate, which the sample rejects.",
-            [Fault.MtlsRefreshAtNormalEndpoint] = "The refresh request at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth."
+            [Fault.MtlsRefreshAtNormalEndpoint] = "The refresh request at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth.",
+            [Fault.MtlsUserInfoAtNormalEndpoint] = "The UserInfo request at userinfo_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: HTTP 401 invalid_token, because the access token is bound to the certificate (RFC 8705 section 3)."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

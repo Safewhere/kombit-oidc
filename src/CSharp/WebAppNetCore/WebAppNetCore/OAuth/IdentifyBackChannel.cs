@@ -22,14 +22,19 @@ namespace WebAppNetCore.OAuth
     }
 
     /// <summary>
-    /// Selects the endpoint and the HttpClient of the requests that authenticate the client. With mutual TLS (RFC 8705), these
-    /// requests go to the mtls_endpoint_aliases of the discovery document (RFC 8705 section 5), over a connection that presents the
-    /// client certificate. Without mutual TLS, they go to the normal endpoints. Identify has no alias for UserInfo, so UserInfo does
-    /// not use this class.
+    /// The UserInfo endpoint of a request, and whether the request presents the client certificate.
+    /// </summary>
+    public sealed record UserInfoTarget(string Endpoint, bool SendsCertificate);
+
+    /// <summary>
+    /// Selects the endpoint and the HttpClient of the requests that authenticate the client, and of UserInfo. With mutual TLS
+    /// (RFC 8705), these requests go to the mtls_endpoint_aliases of the discovery document (RFC 8705 section 5), over a connection
+    /// that presents the client certificate. Without mutual TLS, they go to the normal endpoints.
     /// </summary>
     public sealed class IdentifyBackChannel
     {
         public const string MutualTlsEndpointAliases = "mtls_endpoint_aliases";
+        public const string UserInfoEndpointName = "userinfo_endpoint";
 
         // The faults that send the request without the client certificate.
         private static readonly Dictionary<ClientAuthenticationEndpoint, Fault[]> FaultsWithoutCertificate = new()
@@ -49,7 +54,10 @@ namespace WebAppNetCore.OAuth
             [ClientAuthenticationEndpoint.Introspection] = Array.Empty<Fault>()
         };
 
-        private static readonly Fault[] MutualTlsFaults = { Fault.MtlsParAtNormalEndpoint, Fault.MtlsTokenAtNormalEndpoint, Fault.MtlsRefreshAtNormalEndpoint };
+        private static readonly Fault[] MutualTlsFaults =
+        {
+            Fault.MtlsParAtNormalEndpoint, Fault.MtlsTokenAtNormalEndpoint, Fault.MtlsRefreshAtNormalEndpoint, Fault.MtlsUserInfoAtNormalEndpoint
+        };
 
         private readonly IHttpClientFactory httpClientFactory;
         private readonly IConfiguration configuration;
@@ -68,11 +76,7 @@ namespace WebAppNetCore.OAuth
         /// </summary>
         public string Endpoint(OpenIdConnectConfiguration metadata, ClientAuthenticationEndpoint endpoint, Fault fault = Fault.None)
         {
-            if (MutualTlsFaults.Contains(fault) && !configuration.UsesMutualTls())
-            {
-                throw new OAuthClientException("The fault " + fault + " needs mutual TLS: TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth, "
-                    + "or MutualTls:UseEndpointAliases. The request was not sent.");
-            }
+            RequireMutualTlsForFault(fault);
 
             var name = MetadataName(endpoint);
             if (!configuration.UsesMutualTls() || FaultsAtNormalEndpoint[endpoint].Contains(fault))
@@ -92,6 +96,21 @@ namespace WebAppNetCore.OAuth
         }
 
         /// <summary>
+        /// The UserInfo endpoint. With mutual TLS, Identify binds the access tokens to the client certificate, and UserInfo accepts such a
+        /// token only with the certificate (RFC 8705 section 3). So the request goes to the UserInfo alias of mtls_endpoint_aliases with
+        /// the certificate. When the discovery document has no UserInfo alias, the request goes to userinfo_endpoint without the
+        /// certificate, as RFC 8705 section 5 says. The fault MtlsUserInfoAtNormalEndpoint sends it there too.
+        /// </summary>
+        public UserInfoTarget UserInfoEndpoint(OpenIdConnectConfiguration metadata, Fault fault = Fault.None)
+        {
+            RequireMutualTlsForFault(fault);
+            var alias = configuration.UsesMutualTls() && fault != Fault.MtlsUserInfoAtNormalEndpoint
+                ? ReadMutualTlsEndpointAlias(metadata, UserInfoEndpointName)
+                : null;
+            return string.IsNullOrEmpty(alias) ? new UserInfoTarget(metadata.UserInfoEndpoint, false) : new UserInfoTarget(alias, true);
+        }
+
+        /// <summary>
         /// Whether the request presents the client certificate: with mutual TLS, except for the faults that leave it out.
         /// </summary>
         public bool SendsCertificate(ClientAuthenticationEndpoint endpoint, Fault fault = Fault.None)
@@ -105,7 +124,15 @@ namespace WebAppNetCore.OAuth
         /// </summary>
         public Task<HttpResponseMessage> SendAsync(ClientAuthenticationEndpoint endpoint, HttpRequestMessage request, Fault fault, CancellationToken cancellationToken)
         {
-            var sendsCertificate = SendsCertificate(endpoint, fault);
+            return SendAsync(request, SendsCertificate(endpoint, fault), cancellationToken);
+        }
+
+        /// <summary>
+        /// Sends the request, with the client certificate when sendsCertificate is true. With mutual TLS, the protocol trace shows the
+        /// x5t#S256 value of the certificate, or that the request had no certificate.
+        /// </summary>
+        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, bool sendsCertificate, CancellationToken cancellationToken)
+        {
             if (configuration.UsesMutualTls())
             {
                 request.Options.Set(ProtocolTrace.ClientCertificateKey, sendsCertificate ? "x5t#S256 " + clientCertificate.Thumbprint : "(none)");
@@ -167,6 +194,15 @@ namespace WebAppNetCore.OAuth
             return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
                 ? value.GetString()
                 : null;
+        }
+
+        private void RequireMutualTlsForFault(Fault fault)
+        {
+            if (MutualTlsFaults.Contains(fault) && !configuration.UsesMutualTls())
+            {
+                throw new OAuthClientException("The fault " + fault + " needs mutual TLS: TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth, "
+                    + "or MutualTls:UseEndpointAliases. The request was not sent.");
+            }
         }
 
         private static string MetadataName(ClientAuthenticationEndpoint endpoint)

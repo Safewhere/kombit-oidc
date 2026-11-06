@@ -120,7 +120,7 @@ These capabilities have no setting:
 - UserInfo uses the DPoP scheme and a proof with `ath` for a DPoP-bound access token, and the Bearer scheme otherwise.
 - After a DPoP nonce challenge (`use_dpop_nonce`), the sample retries once with the nonce (RFC 9449 sections 8 and 9). It keeps the latest `DPoP-Nonce` of each server, also from a successful response, and puts it in the next proofs to that server: one nonce for the PAR and token endpoints, another for UserInfo. Identify does not send nonces, so only the unit tests cover this.
 - Refresh keeps the old refresh token when the response has none, and stores a returned replacement.
-- With mutual TLS, a missing endpoint in `mtls_endpoint_aliases` stops the request; the sample never sends it to the normal endpoint instead. Each access token must have `cnf.x5t#S256` with the thumbprint of the client certificate, otherwise the token response fails. UserInfo has no alias and uses its normal endpoint.
+- With mutual TLS, a missing endpoint in `mtls_endpoint_aliases` stops the request; the sample never sends it to the normal endpoint instead. Each access token must have `cnf.x5t#S256` with the thumbprint of the client certificate, otherwise the token response fails. UserInfo goes to the `userinfo_endpoint` alias with the certificate; when the discovery document has no UserInfo alias, UserInfo uses its normal endpoint without the certificate (RFC 8705 section 5).
 
 ## Example: the FAPI 2.0 combination
 
@@ -170,7 +170,7 @@ FAPI 2.0 allows mTLS as the client authentication instead of `private_key_jwt` (
 - **Client authentication**: `TokenAuthnMethod` `self_signed_tls_client_auth` or `tls_client_auth`. The TLS client certificate is the only client credential, and the requests have only `client_id`.
 - **Certificate-bound access tokens with another method**: `MutualTls:UseEndpointAliases=true`, for example with `private_key_jwt`. The requests also have the client assertion.
 
-In both cases, the PAR, token, revocation, and introspection requests go to the endpoints of `mtls_endpoint_aliases` in the discovery document, over a connection with the client certificate (RFC 8705 section 5). Identify binds each access token to the certificate (`cnf.x5t#S256`), and the sample checks the binding. The protocol trace shows the certificate of each request and the `cnf.x5t#S256` of each access token. Identify has no alias for UserInfo, so the sample calls UserInfo as before.
+In both cases, the PAR, token, revocation, introspection, and UserInfo requests go to the endpoints of `mtls_endpoint_aliases` in the discovery document, over a connection with the client certificate (RFC 8705 section 5). Identify binds each access token to the certificate (`cnf.x5t#S256`), and the sample checks the binding. UserInfo accepts such a token only with the same certificate (RFC 8705 section 3), so the sample sends UserInfo to its alias too. When the discovery document has no UserInfo alias, as with an older Identify, the sample sends UserInfo to `userinfo_endpoint` without the certificate. The protocol trace shows the certificate of each request and the `cnf.x5t#S256` of each access token.
 
 Example for FAPI 2.0 with mTLS client authentication:
 
@@ -204,7 +204,7 @@ The Identify connection:
 - `RequireDPoPBoundAccessTokens` can stay `false`, because the access tokens are bound to the certificate.
 - The web server must request client certificates at the mTLS aliases. The Identify configuration guide, section "mTLS client authentication", describes the IIS setup.
 
-With `tls_client_auth` or `self_signed_tls_client_auth`, Identify rejects the requests of the client at the normal token, PAR, revocation, and introspection endpoints. The faults `MtlsParAtNormalEndpoint`, `MtlsTokenAtNormalEndpoint`, and `MtlsRefreshAtNormalEndpoint` show this.
+With `tls_client_auth` or `self_signed_tls_client_auth`, Identify rejects the requests of the client at the normal token, PAR, revocation, and introspection endpoints. The faults `MtlsParAtNormalEndpoint`, `MtlsTokenAtNormalEndpoint`, and `MtlsRefreshAtNormalEndpoint` show this. The normal UserInfo endpoint rejects a certificate-bound access token with HTTP 401 `invalid_token`; the fault `MtlsUserInfoAtNormalEndpoint` shows this.
 
 ## Combinations that cannot succeed
 
@@ -347,6 +347,7 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Intros
 | `MtlsParAtNormalEndpoint` | Sign in | The pushed request at `pushed_authorization_request_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth` |
 | `MtlsTokenAtNormalEndpoint` | Sign in | The token request of the code at `token_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth`; with `private_key_jwt`, an access token without the certificate binding, which the sample rejects |
 | `MtlsRefreshAtNormalEndpoint` | Refresh | The refresh request at `token_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth` |
+| `MtlsUserInfoAtNormalEndpoint` | Call UserInfo | The UserInfo request at `userinfo_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | HTTP 401 `invalid_token`, because the access token is bound to the certificate (RFC 8705 section 3) |
 
 With mutual TLS, the faults `ParWithoutClientAuthentication`, `RefreshWithoutClientAuthentication`, `IntrospectWithoutClientAuthentication`, and `RevokeWithoutClientAuthentication` also leave out the client certificate. The request goes to the mTLS alias, and the web server rejects it with HTTP 403. The faults that change only the form, such as `IntrospectWithClientSecret`, keep the certificate, so Identify can still authenticate the client with it.
 
@@ -382,6 +383,6 @@ Signed in, the home page also has **Introspect access token** (RFC 7662) and **R
 
 - The DPoP key and the trace are in memory, for one application instance.
 - Identify does not support the DPoP server nonce, ES256, EdDSA, or request objects inside PAR, so the sample does not use them. The nonce retry is covered by unit tests only.
-- The sample has no resource server of its own. Identify UserInfo is the protected resource. Identify has no mTLS alias for UserInfo, so the sample calls UserInfo without the client certificate.
+- The sample has no resource server of its own. Identify UserInfo is the protected resource. With mutual TLS, the sample calls the UserInfo alias with the client certificate.
 - Identify compares the TLS client certificate with the `x5c` certificates of the client JWKS, also for `tls_client_auth`. It does not use the subject registration of RFC 8705 section 2.1.2 (`tls_client_auth_subject_dn` and the SAN parameters).
 - OIDC session management does not work together with a connection that requires PAR.
