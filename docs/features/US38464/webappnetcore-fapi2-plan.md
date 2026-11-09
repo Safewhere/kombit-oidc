@@ -333,7 +333,7 @@ After Stage C, run the sample against an Identify Runtime built from `feature/38
 
 ## 11. Out of scope
 
-- The sample resource server. Identify UserInfo is the DPoP-protected resource in the demo.
+- The sample resource server. Identify UserInfo is the DPoP-protected resource in the demo. The contract of the sample resource server is in [sample-resource-server-contract.md](sample-resource-server-contract.md) (US38477).
 - mTLS client authentication and certificate-bound tokens.
 - Request objects (JAR) inside PAR.
 - OIDC session management together with required PAR.

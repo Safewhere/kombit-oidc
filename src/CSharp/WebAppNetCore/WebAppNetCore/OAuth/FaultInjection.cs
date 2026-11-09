@@ -171,7 +171,17 @@ namespace WebAppNetCore.OAuth
         MtlsParAtNormalEndpoint,
         MtlsTokenAtNormalEndpoint,
         MtlsRefreshAtNormalEndpoint,
-        MtlsUserInfoAtNormalEndpoint
+        MtlsUserInfoAtNormalEndpoint,
+
+        // The sample resource server (SampleApi, US38477): faults of the request with the access token.
+        SampleApiBearerScheme,
+        SampleApiTokenInQuery,
+        SampleApiIdToken,
+        SampleApiProofOtherKey,
+        SampleApiReplayProof,
+        SampleApiProofWrongHtm,
+        SampleApiProofWrongHtu,
+        SampleApiProofWrongAth
     }
 
     public static class FaultInjection
@@ -224,6 +234,12 @@ namespace WebAppNetCore.OAuth
             Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof,
             Fault.UserInfoProofAlgNone, Fault.UserInfoProofSignatureOtherKey, Fault.UserInfoProofWithoutJti, Fault.UserInfoProofIatOld,
             Fault.AccessTokenInQuery, Fault.IdTokenAtUserInfo, Fault.MtlsUserInfoAtNormalEndpoint
+        };
+
+        public static readonly Fault[] SampleApiFaults =
+        {
+            Fault.SampleApiBearerScheme, Fault.SampleApiTokenInQuery, Fault.SampleApiIdToken, Fault.SampleApiProofOtherKey,
+            Fault.SampleApiReplayProof, Fault.SampleApiProofWrongHtm, Fault.SampleApiProofWrongHtu, Fault.SampleApiProofWrongAth
         };
 
         public static readonly Fault[] RefreshFaults =
@@ -344,7 +360,15 @@ namespace WebAppNetCore.OAuth
             [Fault.MtlsParAtNormalEndpoint] = "The pushed request at pushed_authorization_request_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth.",
             [Fault.MtlsTokenAtNormalEndpoint] = "The token request of the code at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth; with private_key_jwt, an access token that is not bound to the certificate, which the sample rejects.",
             [Fault.MtlsRefreshAtNormalEndpoint] = "The refresh request at token_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: invalid_client for TokenAuthnMethod tls_client_auth or self_signed_tls_client_auth.",
-            [Fault.MtlsUserInfoAtNormalEndpoint] = "The UserInfo request at userinfo_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: HTTP 401 invalid_token, because the access token is bound to the certificate (RFC 8705 section 3)."
+            [Fault.MtlsUserInfoAtNormalEndpoint] = "The UserInfo request at userinfo_endpoint instead of its mTLS alias, without the client certificate. Needs mutual TLS. Expected: HTTP 401 invalid_token, because the access token is bound to the certificate (RFC 8705 section 3).",
+            [Fault.SampleApiBearerScheme] = "The access token with the Bearer scheme and no proof. Expected: HTTP 401 invalid_token.",
+            [Fault.SampleApiTokenInQuery] = "The access token in the access_token query parameter, with a valid proof (FAPI 2.0 section 5.3.4 item 2). Expected: HTTP 400 invalid_request.",
+            [Fault.SampleApiIdToken] = "The ID token of the sign-in instead of the access token, with the DPoP scheme and a proof. Expected: HTTP 401 invalid_token.",
+            [Fault.SampleApiProofOtherKey] = "A valid proof of a new key, not the key of the access token. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.SampleApiReplayProof] = "Two requests with the same proof. Expected: the first succeeds, the second gets HTTP 401 invalid_dpop_proof.",
+            [Fault.SampleApiProofWrongHtm] = "A proof with the other HTTP method in htm. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.SampleApiProofWrongHtu] = "A proof with the URL of the other operation in htu. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.SampleApiProofWrongAth] = "A proof with the hash of another value in ath. Expected: HTTP 401 invalid_dpop_proof."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

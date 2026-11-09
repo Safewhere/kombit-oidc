@@ -117,6 +117,57 @@ namespace WebAppNetCore.Controllers
             return RedirectToAction(nameof(HomeController.Index), "Home");
         }
 
+        // POST: /Account/CallSampleApi
+        // Reads the profile at the sample resource server with the access token of the session, the DPoP scheme, and a proof.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> CallSampleApi([FromServices] SampleApiClient sampleApiClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            return SendToSampleApiAsync(sampleApiClient, sessionStore, SampleApiOperation.ReadProfile, null, fault);
+        }
+
+        // POST: /Account/WriteNote
+        // Writes a note at the sample resource server, which needs the scope sample-api.write.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> WriteNote([FromServices] SampleApiClient sampleApiClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string text, [FromForm] string fault)
+        {
+            return SendToSampleApiAsync(sampleApiClient, sessionStore, SampleApiOperation.WriteNote, text, fault);
+        }
+
+        private async Task<IActionResult> SendToSampleApiAsync(SampleApiClient sampleApiClient, ClientSessionStore sessionStore, SampleApiOperation operation, string text, string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var session = sessionStore.Get(result.Properties);
+            var apiFault = FaultInjection.Parse(fault, configuration, FaultInjection.SampleApiFaults);
+            if (apiFault != Fault.None)
+            {
+                session?.Trace.Add("Fault injection", apiFault + ": " + FaultInjection.Describe(apiFault));
+            }
+
+            try
+            {
+                var response = await sampleApiClient.SendAsync(operation, text, result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.IdToken), session, apiFault, HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = response.Describe();
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+            catch (HttpRequestException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = "The sample API cannot be reached: " + exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
         // POST: /Account/Introspect
         // Introspects the access token of the session (RFC 7662) and shows the response.
         [HttpPost]

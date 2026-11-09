@@ -21,6 +21,9 @@ namespace WebAppNetCore.Models
 
         public bool FaultInjectionEnabled { get; set; }
 
+        /// <summary>True when SampleApi:BaseUrl has a value, so that the home page shows the calls of the sample API.</summary>
+        public bool SampleApiEnabled { get; set; }
+
         /// <summary>False when the server-side state of the sign-in is gone, for example after a restart.</summary>
         public bool SessionStateAvailable { get; set; }
 

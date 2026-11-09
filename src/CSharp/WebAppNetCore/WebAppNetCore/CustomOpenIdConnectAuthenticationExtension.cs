@@ -51,6 +51,9 @@ namespace WebAppNetCore
             services.AddSingleton<UserInfoClient>();
             services.AddSingleton<PushedAuthorizationClient>();
             services.AddSingleton<TokenManagementClient>();
+            services.AddHttpClient(SampleApiClient.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
+            services.AddSingleton<SampleApiClient>();
             services.AddMemoryCache();
             services.AddSingleton<ClientSessionStore>();
 
@@ -93,6 +96,14 @@ namespace WebAppNetCore
             foreach (var scope in scopes)
             {
                 connectOptions.Scope.Add(scope);
+            }
+
+            if (!string.IsNullOrEmpty(configuration.SampleApiBaseUrl()))
+            {
+                foreach (var scope in configuration.SampleApiScopes().Where(scope => !connectOptions.Scope.Contains(scope)))
+                {
+                    connectOptions.Scope.Add(scope);
+                }
             }
 
             connectOptions.TokenValidationParameters.ValidateAudience = true;   // by default, when we don't explicitly set ValidAudience, it is set to ClientId

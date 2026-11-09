@@ -15,6 +15,24 @@ namespace WebAppNetCore
             return configuration["OpenIdConnectOptions:Scope"];
         }
 
+        /// <summary>
+        /// The base URL of the sample resource server (SampleApi), without a trailing slash. Empty turns the calls of the sample API off.
+        /// </summary>
+        public static string SampleApiBaseUrl(this IConfiguration configuration)
+        {
+            return (configuration["SampleApi:BaseUrl"] ?? string.Empty).TrimEnd('/');
+        }
+
+        /// <summary>
+        /// The scopes that the sign-in requests in addition to OpenIdConnectOptions:Scope when SampleApi:BaseUrl has a value.
+        /// </summary>
+        public static IReadOnlyList<string> SampleApiScopes(this IConfiguration configuration)
+        {
+            var value = configuration["SampleApi:Scopes"];
+            return (string.IsNullOrWhiteSpace(value) ? "sample-api.read sample-api.write" : value)
+                .Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
         public static string ClientId(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:ClientId"];

@@ -35,6 +35,9 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     internal StubIdentify Identify { get; } = new(ClientId);
 
+    /// <summary>The sample resource server, for the calls of /Account/CallSampleApi and /Account/WriteNote.</summary>
+    internal StubSampleApi SampleApi { get; } = new();
+
     /// <summary>Whether the discovery document has pushed_authorization_request_endpoint.</summary>
     internal bool PublishParEndpoint { get; init; } = true;
 
@@ -101,6 +104,7 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddHttpClient(IdentifyHttpClient.MutualTlsName)
                 .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
                     new ClientCertificateHeaderHandler(serviceProvider.GetRequiredService<MutualTlsClientCertificate>().Thumbprint) { InnerHandler = Identify });
+            services.AddHttpClient(SampleApiClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => SampleApi);
             services.AddSingleton<IStartupFilter, TestSessionEndpointStartupFilter>();
         });
     }

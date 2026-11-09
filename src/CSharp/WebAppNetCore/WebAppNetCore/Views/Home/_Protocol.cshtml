@@ -87,6 +87,24 @@
                 }
                 <button type="submit" class="btn btn-primary">Revoke access token</button>
             </form>
+            @if (Model.SampleApiEnabled)
+            {
+                <form method="post" asp-controller="Account" asp-action="CallSampleApi">
+                    @if (Model.FaultInjectionEnabled)
+                    {
+                        <partial name="_FaultSelect" model="FaultInjection.SampleApiFaults" />
+                    }
+                    <button type="submit" class="btn btn-primary">Call sample API</button>
+                </form>
+                <form method="post" asp-controller="Account" asp-action="WriteNote">
+                    <input name="text" value="A note from the sample client" maxlength="200" class="form-control" style="max-width:350px; margin:5px 0" />
+                    @if (Model.FaultInjectionEnabled)
+                    {
+                        <partial name="_FaultSelect" model="FaultInjection.SampleApiFaults" />
+                    }
+                    <button type="submit" class="btn btn-primary">Write note</button>
+                </form>
+            }
         </div>
     </div>
 

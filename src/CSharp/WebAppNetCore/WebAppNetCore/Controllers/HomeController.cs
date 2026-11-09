@@ -111,7 +111,8 @@ namespace WebAppNetCore.Controllers
                 Warnings = Configuration.BuildingBlockWarnings(),
                 Result = TempData[ProtocolViewModel.ResultKey] as string,
                 IsAuthenticated = HttpContext.User.Identity.IsAuthenticated,
-                FaultInjectionEnabled = Configuration.EnableFaultInjection()
+                FaultInjectionEnabled = Configuration.EnableFaultInjection(),
+                SampleApiEnabled = !string.IsNullOrEmpty(Configuration.SampleApiBaseUrl())
             };
             if (!model.IsAuthenticated)
             {
