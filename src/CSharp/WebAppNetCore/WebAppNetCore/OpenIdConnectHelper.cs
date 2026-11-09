@@ -22,7 +22,7 @@ namespace WebAppNetCore
         public static readonly string[] IdTokenEncryptedResponseAlgs = { "RSA-OAEP", "RSA-OAEP-256", "A128KW", "A192KW", "A256KW" };
         public static readonly string[] IdTokenEncryptedResponseEnc = { "A128CBC-HS256", "A192CBC-HS384", "A256CBC-HS512", "A128GCM", "A192GCM", "A256GCM" };
 
-        public static string GenerateReauthenticateUri(HttpContext HttpContext, IConfiguration configuration)
+        public static string GenerateReauthenticateUri(HttpContext HttpContext, IConfiguration configuration, string authorizationEndpoint)
         {
             string state = RandomDataBase64url(32);
             string nonce = Guid.NewGuid().ToString("N");
@@ -30,7 +30,7 @@ namespace WebAppNetCore
             string authorizationRequest = string.Format("{0}?response_type=code&scope={4}&redirect_uri={1}&client_id={2}" +
                                                         "&state={3}&prompt=none" +
                                                         "&nonce={5}",
-                    configuration.AuthorizationEndpoint(),
+                    authorizationEndpoint,
                     HttpContext.Request.Scheme + "://" + HttpContext.Request.Host + "/Account/ReauthenticationCallBack",
                     HttpUtility.UrlEncode(configuration.ClientId()),
                     state,

@@ -112,7 +112,11 @@ namespace WebAppNetCore.OAuth
                 }
 
                 var userInfo = await ReadResponseAsync(response, cancellationToken);
-                session?.Trace.AddExchange(Step, request, form, null, (int)response.StatusCode, response.Content.Headers.ContentType?.MediaType);
+                var mediaType = response.Content.Headers.ContentType?.MediaType;
+                var signedResponse = string.Equals(mediaType, "application/jwt", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { ProtocolTrace.Detail("Signed UserInfo response", ProtocolTrace.DescribeJwt(userInfo.RawResponse)) }
+                    : null;
+                session?.Trace.AddExchange(Step, request, form, null, (int)response.StatusCode, mediaType, signedResponse);
                 return userInfo;
             }
         }

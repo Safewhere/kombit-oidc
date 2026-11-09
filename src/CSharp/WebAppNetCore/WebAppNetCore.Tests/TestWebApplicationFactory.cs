@@ -67,11 +67,9 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["OpenIdConnectOptions:ResponseMode"] = "",
                 ["OpenIdConnectOptions:AuthorizationEndpointMethod"] = authorizationEndpointMethod,
                 ["OpenIdConnectOptions:ClaimsIssuer"] = ProviderIssuer,
-                ["OpenIdConnectOptions:IssuerDomain"] = StubIdentify.Domain,
                 ["OpenIdConnectOptions:Scope"] = "openid",
                 ["OpenIdConnectOptions:EnableSessionManagement"] = "false",
                 ["OpenIdConnectOptions:EnablePostLogout"] = "false",
-                ["OpenIdConnectOptions:CheckSessionIframeUri"] = StubIdentify.Domain + "/runtime/openidconnect/sessionlogout.idp",
                 ["OpenIdConnectOptions:TokenAuthnMethod"] = "client_secret_post"
             };
             foreach (var setting in settings)
@@ -123,6 +121,7 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
               "token_endpoint": "{{StubIdentify.TokenEndpoint}}",
               "userinfo_endpoint": "{{StubIdentify.UserInfoEndpoint}}",
               "end_session_endpoint": "{{StubIdentify.EndSessionEndpoint}}",
+              "check_session_iframe": "{{StubIdentify.CheckSessionIframe}}",
               "introspection_endpoint": "{{StubIdentify.IntrospectionEndpoint}}",
               "revocation_endpoint": "{{StubIdentify.RevocationEndpoint}}",
               "jwks_uri": "{{ProviderIssuer}}/certs.idp"

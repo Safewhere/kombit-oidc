@@ -23,21 +23,19 @@ namespace WebAppNetCore.Controllers
         }
 
         private readonly ClientSessionStore sessionStore;
+        private readonly IdentifyMetadata identifyMetadata;
 
-        public HomeController(IConfiguration configuration, ClientSessionStore sessionStore)
+        public HomeController(IConfiguration configuration, ClientSessionStore sessionStore, IdentifyMetadata identifyMetadata)
         {
             Configuration = configuration ?? throw new ArgumentNullException("configuration");
             this.sessionStore = sessionStore;
+            this.identifyMetadata = identifyMetadata;
         }
 
         public async Task<IActionResult> Index()
         {
             ViewData["Origin"] = $"{Request.Scheme}://{Request.Host.Value}";
 
-            var authorizationRequest = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, Configuration);
-            ViewData["Reauthenticate"] = authorizationRequest;
-
-            ViewData["EndSessionUri"] = Configuration.EndSessionEndpoint();
             if(HttpContext.User.Identity.IsAuthenticated)
             {
                 ViewData["IdTokenHint"] = HttpContext.GetTokenAsync(OpenIdConnectConstants.IdToken).Result;
@@ -54,13 +52,41 @@ namespace WebAppNetCore.Controllers
 
             ViewData["EnableSessionManagement"] = Configuration.EnableSessionManagement() ? "Yes" : "No";
             ViewData["EnablePostLogout"] = Configuration.EnablePostLogout() ? "Yes" : "No";
-            if (Configuration.EnableSessionManagement())
+
+            var protocol = await CreateProtocolViewModelAsync();
+            await SetIdentifyEndpointsAsync(protocol);
+            ViewData["Protocol"] = protocol;
+            return View();
+        }
+
+        /// <summary>
+        /// Sets the end-session and check-session URLs from the discovery document, after the issuer check of IdentifyMetadata.
+        /// Only a signed-in user sees the post logout form and the session check frames.
+        /// </summary>
+        private async Task SetIdentifyEndpointsAsync(ProtocolViewModel protocol)
+        {
+            if (!HttpContext.User.Identity.IsAuthenticated || (!Configuration.EnablePostLogout() && !Configuration.EnableSessionManagement()))
             {
-                ViewData["CheckSessionIframeUri"] = Configuration.CheckSessionIframeUri();
+                return;
             }
 
-            ViewData["Protocol"] = await CreateProtocolViewModelAsync();
-            return View();
+            try
+            {
+                var metadata = await identifyMetadata.GetAsync(HttpContext.RequestAborted);
+                if (Configuration.EnablePostLogout())
+                {
+                    ViewData["EndSessionUri"] = IdentifyMetadata.RequireEndpoint(metadata.EndSessionEndpoint, "end_session_endpoint");
+                }
+
+                if (Configuration.EnableSessionManagement())
+                {
+                    ViewData["CheckSessionIframeUri"] = IdentifyMetadata.RequireEndpoint(metadata.CheckSessionIframe, "check_session_iframe");
+                }
+            }
+            catch (Exception exception) when (exception is OAuthClientException || exception is InvalidOperationException)
+            {
+                protocol.Warnings.Add("The post logout form and the session check are not available: " + exception.Message);
+            }
         }
        
         public IActionResult About()

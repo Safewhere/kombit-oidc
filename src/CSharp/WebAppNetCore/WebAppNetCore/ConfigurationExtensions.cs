@@ -40,36 +40,6 @@ namespace WebAppNetCore
             return configuration["OpenIdConnectOptions:ClaimsIssuer"].TrimEnd('/');
         }
 
-        public static string IssuerDomain(this IConfiguration configuration)
-        {
-            return configuration["OpenIdConnectOptions:IssuerDomain"].TrimEnd('/');
-        }
-
-        public static string AuthorizationEndpoint(this IConfiguration configuration)
-        {
-            return configuration.IssuerDomain() + "/runtime/oauth2/authorize.idp";
-        }
-
-        public static string EndSessionEndpoint(this IConfiguration configuration)
-        {
-            return configuration.IssuerDomain() + "/runtime/openidconnect/logout.idp";
-        }
-
-        public static bool SessionManagementEnabled(this IConfiguration configuration)
-        {
-            return configuration.CheckSessionIframeUri() != null;
-        }
-
-        public static Uri CheckSessionIframeUri(this IConfiguration configuration)
-        {
-            var sessionUri = configuration["OpenIdConnectOptions:CheckSessionIframeUri"];
-            if (string.IsNullOrEmpty(sessionUri))
-            {
-                return null;
-            }
-            return new Uri(sessionUri);
-        }
-
         public static bool UsePKCE(this IConfiguration configuration)
         {
             return configuration["OpenIdConnectOptions:UsePKCE"] == "true";

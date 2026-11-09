@@ -27,6 +27,7 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal const string IntrospectionEndpoint = Issuer + "/introspect.idp";
     internal const string RevocationEndpoint = Issuer + "/revoke.idp";
     internal const string EndSessionEndpoint = Domain + "/runtime/openidconnect/logout.idp";
+    internal const string CheckSessionIframe = Domain + "/runtime/openidconnect/sessionlogout.idp";
 
     // The mTLS endpoint aliases of mtls_endpoint_aliases (RFC 8705 section 5), with the same layout as an Identify Runtime.
     internal const string MtlsTokenEndpoint = Issuer + "/mtls/token.idp";

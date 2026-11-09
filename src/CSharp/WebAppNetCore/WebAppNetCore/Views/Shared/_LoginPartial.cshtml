@@ -58,7 +58,7 @@
     <div class="alert alert-info" role="alert">
         <div class="input-group" style="display:flex;">
             <a asp-area="" asp-controller="Account" asp-action="SignOut" class="btn btn-primary">Sign out</a>
-            @if (ViewData["EnablePostLogout"] == "Yes")
+            @if (ViewData["EnablePostLogout"] == "Yes" && ViewData["EndSessionUri"] != null)
             {
                 <form action="@ViewData["EndSessionUri"]" enctype="application/x-www-form-urlencoded" method="post" style="padding-left:5px">
                     @Html.AntiForgeryToken()
@@ -71,7 +71,7 @@
     </div>
 
 
-    @if (ViewData["EnableSessionManagement"] == "Yes")
+    @if (ViewData["EnableSessionManagement"] == "Yes" && ViewData["CheckSessionIframeUri"] != null)
     {
         <iframe frameborder="0" allowtransparency="true" height="0" width="0" src="@Url.Action("RPIFrame", "Account")"></iframe>
         <iframe frameborder="0" allowtransparency="true" height="0" width="0" src='@ViewData["CheckSessionIframeUri"]' id="opIFrame"></iframe>

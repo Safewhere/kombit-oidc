@@ -80,10 +80,7 @@ public sealed class CodeFlowTests
     [Fact]
     public async Task TheTokenEndpointComesFromTheDiscoveryDocument()
     {
-        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
-        {
-            ["OpenIdConnectOptions:IssuerDomain"] = "https://not-used.test"
-        });
+        using var factory = new TestWebApplicationFactory();
         using var client = SignInFlow.CreateHttpsClient(factory);
 
         await SignInFlow.SignInAsync(client, factory);
@@ -212,6 +209,9 @@ public sealed class CodeFlowTests
         await SignInFlow.SignInAsync(client, factory);
 
         Assert.Equal("signed@provider.test", (await TestSession.GetAsync(client)).Claim("email"));
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync("/"));
+        Assert.Contains("UserInfo request: HTTP 200: application/jwt", page);
+        Assert.Matches("<td>Signed UserInfo response</td><td><pre>header: \\{\\s*\"alg\": \"RS256\",\\s*\"kid\": \"stub-signing-key\"[^<]*\"email\": \"signed@provider.test\"", page);
     }
 
     [Fact]

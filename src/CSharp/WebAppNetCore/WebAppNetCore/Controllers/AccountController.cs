@@ -351,29 +351,54 @@ namespace WebAppNetCore.Controllers
             return RedirectToAction("SignedOut", "Account");
         }
 
-        public IActionResult ReauthenticationCallBack()
+        public async Task<IActionResult> ReauthenticationCallBack([FromServices] IdentifyMetadata identifyMetadata)
         {
-            InitializeDataForRPFrame();
+            var failure = await InitializeDataForRPFrameAsync(identifyMetadata);
+            if (failure != null)
+            {
+                return failure;
+            }
+
             ViewData["Action"] = "ReauthenticationCallBack";
             return View("RPIFrame");
         }
 
-        public ActionResult RPIFrame()
+        public async Task<IActionResult> RPIFrame([FromServices] IdentifyMetadata identifyMetadata)
         {
-            InitializeDataForRPFrame();
-            ViewData["Action"] = "RPIFrame";
+            var failure = await InitializeDataForRPFrameAsync(identifyMetadata);
+            if (failure != null)
+            {
+                return failure;
+            }
 
+            ViewData["Action"] = "RPIFrame";
             return View();
         }
 
-        private void InitializeDataForRPFrame()
+        /// <summary>
+        /// Sets the values of the RP frame (OpenID Connect Session Management). The authorization endpoint of the prompt=none request and
+        /// the origin of the OP frame come from the discovery document, after the issuer check of IdentifyMetadata.
+        /// </summary>
+        private async Task<IActionResult> InitializeDataForRPFrameAsync(IdentifyMetadata identifyMetadata)
         {
+            OpenIdConnectConfiguration metadata;
+            try
+            {
+                metadata = await identifyMetadata.GetAsync(HttpContext.RequestAborted);
+                IdentifyMetadata.RequireEndpoint(metadata.AuthorizationEndpoint, "authorization_endpoint");
+                IdentifyMetadata.RequireEndpoint(metadata.CheckSessionIframe, "check_session_iframe");
+            }
+            catch (Exception exception) when (exception is OAuthClientException || exception is InvalidOperationException)
+            {
+                return Content("The session check is not available: " + exception.Message, "text/plain");
+            }
+
             var sessionState = HttpContext.User.Claims.Where(x => x.Type == OpenIdConnectConstants.SessionState).Select(x => x.Value).FirstOrDefault();
             ViewData[OpenIdConnectConstants.ClientId] = configuration.ClientId();
             ViewData[OpenIdConnectConstants.SessionState] = sessionState;
-            ViewData["OPDomain"] = configuration.IssuerDomain();
-            var authorizationRequest = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, configuration);
-            ViewData["Reauthenticate"] = authorizationRequest;
+            ViewData["OPDomain"] = new Uri(metadata.CheckSessionIframe).GetLeftPart(UriPartial.Authority);
+            ViewData["Reauthenticate"] = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, configuration, metadata.AuthorizationEndpoint);
+            return null;
         }
 
         // GET: /Account/FrontChannelLogout
