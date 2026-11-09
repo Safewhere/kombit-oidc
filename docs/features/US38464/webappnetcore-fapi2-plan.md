@@ -333,8 +333,8 @@ After Stage C, run the sample against an Identify Runtime built from `feature/38
 
 ## 11. Out of scope
 
-- The sample resource server. Identify UserInfo is the DPoP-protected resource in the demo. The contract of the sample resource server is in [sample-resource-server-contract.md](sample-resource-server-contract.md) (US38477).
-- mTLS client authentication and certificate-bound tokens.
+- The sample resource server, on 14 October. US38477 added it later as the separate project `SampleApi`, after its contract [sample-resource-server-contract.md](sample-resource-server-contract.md) was agreed. Identify UserInfo stays a DPoP-protected resource of the demo.
+- mTLS client authentication and certificate-bound tokens, on 14 October. US38474 added them later (README section "Mutual TLS"). `SampleApi` does not accept certificate-bound tokens.
 - Request objects (JAR) inside PAR.
 - OIDC session management together with required PAR.
 - Token revocation at sign-out.
@@ -342,7 +342,7 @@ After Stage C, run the sample against an Identify Runtime built from `feature/38
 
 ## 12. Implementation status
 
-Last update: 14 October 2026. Branch `feature/38464-fapi`. The decisions in section 3 were implemented as proposed. All work packages are committed. Nothing is pushed. The test project has 85 tests, and all pass.
+Last update: 9 November 2026 (US38480). Branch `feature/38464-fapi` of the fork `namkha87/kombit-oidc`, in the open pull request [Safewhere/kombit-oidc#32](https://github.com/Safewhere/kombit-oidc/pull/32), which has no review yet. The decisions in section 3 were implemented as proposed. The table below lists the work packages of 14 October; the second table lists the later commits.
 
 | WP | Commit | Tests added |
 |---|---|---|
@@ -357,7 +357,23 @@ Last update: 14 October 2026. Branch `feature/38464-fapi`. The decisions in sect
 | WP7 DPoP | `e11f416` | The RFC 7638 vector, the proof contents, the key of each step, the nonce retries, and the `token_type` check |
 | WP8 Refresh and home page | `ddf7e7d` | Refresh, UserInfo, the protocol panels, redaction, warnings, and a lost session state |
 | WP9 Fault injection | `b6d982e` | Each fault against the stub |
-| WP10 Documentation | This commit | None |
+| WP10 Documentation | `e05c3fa` | None |
+
+Later commits:
+
+| Story | Commit | Content |
+|---|---|---|
+| US38464 | `2813409`, `37a23d3` | Testing tools, and the findings of the first live tests |
+| US38464 | `2ff2ead`, `dd3f30d`, `da5d78c`, `835d90a`, `bcba1d6`, `27dd3b5` | The faults of the negative tests, introspection, revocation, and client credentials |
+| US38464 | `f0c5b1d`, `1fce40a` | Local test material out of the repository, and the DPoP nonces of each server |
+| US38474 | `b8b996e`, `6cbedd6` | Mutual TLS client authentication (RFC 8705), and UserInfo at the mTLS alias |
+| US38478 | `4014f84` | The end-session, check-session, and authorization URLs from the discovery document; `IssuerDomain` and `CheckSessionIframeUri` are gone |
+| US38477 | `2bd4d86` | The sample resource server `SampleApi` and its contract, and the client calls to it |
+| US38480 | The commit of this update | No authorization code in the console output; the README and this section for `SampleApi` |
+
+Tests at the commit of this update: `WebAppNetCore.Tests` 270 and `SampleApi.Tests` 39, all pass.
+
+The scope of the pull request is wider than section 11 said on 14 October: it now has mutual TLS (US38474) and the sample resource server `SampleApi` (US38477). The sample still has no other languages and no key storage for more than one instance.
 
 Differences from the plan and facts found during the implementation:
 
@@ -372,5 +388,5 @@ Differences from the plan and facts found during the implementation:
 
 Open items:
 
-- The review of each stage by the user.
-- The live verification in section 8, including the WP9 rows marked "verify".
+- The review of pull request #32.
+- The live verification of section 8 ran on an Identify test tenant from 16 October to 9 November 2026, with one run for each Identify story. The results and the "verify" rows are in the live test reports, which are kept outside this repository.

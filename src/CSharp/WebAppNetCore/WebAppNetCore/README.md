@@ -29,6 +29,8 @@ By default, all the necessary configurations for running this application are al
 
 - Supports refresh and UserInfo calls from the home page, with a protocol trace, and fault injection for negative tests.
 
+- Supports calls to the sample resource server [SampleApi](#the-sample-resource-server-sampleapi), which accepts only DPoP-bound access tokens.
+
 # Configurations
 
 ## Enable OpenID Connect session management
@@ -93,7 +95,7 @@ The Identify documents are in the Identify repository, in `docs/features/US38464
 
 ## Settings
 
-All keys are in the `OpenIdConnectOptions` section, except the last one. The defaults keep the earlier behavior. An invalid value stops the application at startup, so that a misspelled value never reads as "off".
+All keys are in the `OpenIdConnectOptions` section, except the keys that start with `Testing:` or `SampleApi:`. The defaults keep the earlier behavior. An invalid value stops the application at startup, so that a misspelled value never reads as "off".
 
 | Setting | Values, default | Standard | Behavior |
 |---|---|---|---|
@@ -110,10 +112,12 @@ All keys are in the `OpenIdConnectOptions` section, except the last one. The def
 | `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
 | `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
 | `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, `AssertionIssuerNotClient`, and `ClientIdNotSubject`. Without a value, these faults fail with a message. |
+| `SampleApi:BaseUrl` | a URL; default empty | None | The base URL of the [sample resource server](#the-sample-resource-server-sampleapi), for example `https://localhost:44392`. Empty turns off its buttons and its scopes. |
+| `SampleApi:Scopes` | a space list; default `sample-api.read sample-api.write` | FAPI 5.3.3.1 item 13 | The scopes that the sign-in requests in addition to `Scope` when `SampleApi:BaseUrl` has a value. |
 
 These capabilities have no setting:
 
-- The token, PAR, and UserInfo endpoints come from the discovery document. The discovered `issuer` must equal `ClaimsIssuer`.
+- All Identify endpoints come from the discovery document: authorization, PAR, token, UserInfo, end-session, `check_session_iframe`, introspection, and revocation. The discovered `issuer` must equal `ClaimsIssuer`, so `ClaimsIssuer` is the only Identify address in the settings.
 - A present `iss` in the authorization response must equal the discovered issuer. When discovery has `authorization_response_iss_parameter_supported=true`, a missing `iss` fails (RFC 9207).
 - The nonce has 43 characters (FAPI 2.0 allows at most 64), and the ID token nonce is checked against the nonce cookie of the browser.
 - Each sign-in gets a new RSA 2048 DPoP key. All proofs of the sign-in use it: PAR, token, refresh, and UserInfo.
@@ -206,6 +210,44 @@ The Identify connection:
 
 With `tls_client_auth` or `self_signed_tls_client_auth`, Identify rejects the requests of the client at the normal token, PAR, revocation, and introspection endpoints. The faults `MtlsParAtNormalEndpoint`, `MtlsTokenAtNormalEndpoint`, and `MtlsRefreshAtNormalEndpoint` show this. The normal UserInfo endpoint rejects a certificate-bound access token with HTTP 401 `invalid_token`; the fault `MtlsUserInfoAtNormalEndpoint` shows this.
 
+## The sample resource server (SampleApi)
+
+The project `SampleApi` next to this sample is a small API that accepts an access token of Identify as FAPI 2.0 section 5.3.4 requires. Its contract is [sample-resource-server-contract.md](../../../../docs/features/US38464/sample-resource-server-contract.md). It has two operations: `GET /api/profile` with the scope `sample-api.read`, and `POST /api/notes` with the scope `sample-api.write`. For each request, it checks these:
+
+1. The access token is only in the `Authorization` header with the `DPoP` scheme. A token in the query or the form gets HTTP 400.
+2. The token is a JWT with `typ` `at+jwt` and PS256, signed with a key of the discovered `jwks_uri`, with the configured issuer and the audience `urn:kombit-oidc:sample-api`, and not expired.
+3. The token has `cnf.jkt` and no certificate binding.
+4. The DPoP proof is valid (RFC 9449 section 4.3): its key is the bound key, `htm` and `htu` match the request, `ath` is the hash of the token, `iat` is recent, and the `jti` is new.
+5. Introspection at Identify reports the token as active, so a revoked token fails at the next request.
+6. The scope of the token has the scope of the operation; otherwise HTTP 403 `insufficient_scope`.
+
+Each rejection has a `WWW-Authenticate: DPoP` challenge. The API log names the reason of each rejection and contains no token, proof, or assertion.
+
+The Identify setup:
+
+- A connection for the API, for example with the client ID `fapi-test-api`: `TokenEndpointAuthenticationMethod=PrivateKeyJwt`, no grant type, `AllowTokenRevocationAndIntrospection=true`, the public key of the API certificate in `ClientJwks`, and the rules `clientAssertion.audience=issuer` and `clientJwt` with `PS256`. The API uses it only to call introspection.
+- The client connection: `urn:kombit-oidc:sample-api` in `ApplicationAudience` next to the current value, and the scopes `sample-api.read` and `sample-api.write`. Identify puts every value of `ApplicationAudience` into `aud`. Do not give the client the audience `EntityIdentifier`.
+
+Run the API, and set its secrets in user secrets of the `SampleApi` project:
+
+```bash
+dotnet user-secrets set "SampleApi:Issuer" "https://<host>/runtime/oauth2" --project ../SampleApi
+```
+
+```bash
+dotnet user-secrets set "SampleApi:AssertionSigningCertPath" "C:\certs\api.pfx" --project ../SampleApi
+```
+
+```bash
+dotnet user-secrets set "SampleApi:AssertionSigningCertPassword" "<password>" --project ../SampleApi
+```
+
+```bash
+dotnet run --project ../SampleApi --urls https://localhost:44392
+```
+
+Then set `SampleApi:BaseUrl` of this sample to `https://localhost:44392`. The home page gets **Call sample API** and **Write note**. Both send the access token of the session with the `DPoP` scheme and a new proof of the key of the sign-in.
+
 ## Combinations that cannot succeed
 
 The sample sends what the settings say, so that you can see the Identify response. The startup log and the home page warn about the combinations that the sample can detect alone.
@@ -229,6 +271,7 @@ The sample sends what the settings say, so that you can see the Identify respons
 - **OAuth building blocks**: the active settings and the warnings.
 - **Access token**: `token_type`, the `cnf.jkt` of the access token, the thumbprint of the DPoP key of the sign-in, and whether they match.
 - **Call UserInfo** and **Refresh access token**: a UserInfo call with a fresh proof, and a refresh with the key of the sign-in. The result shows at the top of the page.
+- **Call sample API** and **Write note**, when `SampleApi:BaseUrl` has a value: the two operations of the [sample resource server](#the-sample-resource-server-sampleapi).
 - **Pushed authorization request**: the `request_uri` and `expires_in` of the PAR response.
 - **Protocol trace**: each request of the sign-in, with the redacted form, the decoded client assertion and DPoP proof, the TLS client certificate with mutual TLS, and the response. Client secrets, code verifiers, and JWT signatures are not shown.
 
@@ -236,7 +279,7 @@ The sample keeps the DPoP key and the trace in memory, for one application insta
 
 ## Fault injection
 
-With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Introspect, Revoke, and client credentials forms get a fault list. A fault is one deliberate protocol violation in the next request of that action. The expected results come from section 5 of the Identify design; "verify" marks a result that the design does not state.
+With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Introspect, Revoke, client credentials, Call sample API, and Write note forms get a fault list. A fault is one deliberate protocol violation in the next request of that action. The expected results come from section 5 of the Identify design; "verify" marks a result that the design does not state.
 
 | Fault | Action | Change | Expected Identify result |
 |---|---|---|---|
@@ -347,6 +390,12 @@ With `Testing:EnableFaultInjection=true`, the sign-in, UserInfo, Refresh, Intros
 | `MtlsParAtNormalEndpoint` | Sign in | The pushed request at `pushed_authorization_request_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth` |
 | `MtlsTokenAtNormalEndpoint` | Sign in | The token request of the code at `token_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth`; with `private_key_jwt`, an access token without the certificate binding, which the sample rejects |
 | `MtlsRefreshAtNormalEndpoint` | Refresh | The refresh request at `token_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | `invalid_client` for `tls_client_auth` and `self_signed_tls_client_auth` |
+| `SampleApiBearerScheme` | Call sample API, Write note | The access token with the Bearer scheme and no proof | HTTP 401 `invalid_token` from the sample API |
+| `SampleApiTokenInQuery` | Call sample API, Write note | The access token in the `access_token` query parameter, with a valid proof | HTTP 400 `invalid_request` from the sample API |
+| `SampleApiIdToken` | Call sample API, Write note | The ID token instead of the access token, with the DPoP scheme and a proof | HTTP 401 `invalid_token` from the sample API |
+| `SampleApiProofOtherKey` | Call sample API, Write note | A valid proof of a new key | HTTP 401 `invalid_dpop_proof` from the sample API |
+| `SampleApiReplayProof` | Call sample API, Write note | Two requests with the same proof | The first succeeds, the second gets HTTP 401 `invalid_dpop_proof` |
+| `SampleApiProofWrongHtm`, `SampleApiProofWrongHtu`, `SampleApiProofWrongAth` | Call sample API, Write note | A proof with the other method, the URL of the other operation, or the hash of another value | HTTP 401 `invalid_dpop_proof` from the sample API |
 | `MtlsUserInfoAtNormalEndpoint` | Call UserInfo | The UserInfo request at `userinfo_endpoint` instead of its mTLS alias, without the client certificate. Needs mutual TLS | HTTP 401 `invalid_token`, because the access token is bound to the certificate (RFC 8705 section 3) |
 
 With mutual TLS, the faults `ParWithoutClientAuthentication`, `RefreshWithoutClientAuthentication`, `IntrospectWithoutClientAuthentication`, and `RevokeWithoutClientAuthentication` also leave out the client certificate. The request goes to the mTLS alias, and the web server rejects it with HTTP 403. The faults that change only the form, such as `IntrospectWithClientSecret`, keep the certificate, so Identify can still authenticate the client with it.
@@ -369,7 +418,7 @@ Signed in, the home page also has **Introspect access token** (RFC 7662) and **R
 | 5.3.3.1-10 trusted issuer | `ClaimsIssuer` in the application configuration |
 | 5.3.3.1-11 issuer consistency | The discovered issuer must equal `ClaimsIssuer` |
 | 5.3.3.1-12 initiation protection | POST sign-in with an antiforgery token; the correlation cookie binds the flow to the browser |
-| 5.3.3.1-13 least privileges | `Scope=openid` |
+| 5.3.3.1-13 least privileges | `Scope=openid`; the scopes of the sample API only when `SampleApi:BaseUrl` has a value |
 | 5.3.3.2-1 code grant | `ResponseType=code` |
 | 5.3.3.2-2 PAR | `PushedAuthorization=Require` |
 | 5.3.3.2-3 S256 | Always |
@@ -383,6 +432,6 @@ Signed in, the home page also has **Introspect access token** (RFC 7662) and **R
 
 - The DPoP key and the trace are in memory, for one application instance.
 - Identify does not support the DPoP server nonce, ES256, EdDSA, or request objects inside PAR, so the sample does not use them. The nonce retry is covered by unit tests only.
-- The sample has no resource server of its own. Identify UserInfo is the protected resource. With mutual TLS, the sample calls the UserInfo alias with the client certificate.
+- The sample resource server `SampleApi` accepts only DPoP-bound access tokens. It rejects certificate-bound access tokens, so a client with mutual TLS and without DPoP can use only Identify UserInfo, at its mTLS alias. The replay store of the API is in memory, for one instance.
 - Identify compares the TLS client certificate with the `x5c` certificates of the client JWKS, also for `tls_client_auth`. It does not use the subject registration of RFC 8705 section 2.1.2 (`tls_client_auth_subject_dn` and the SAN parameters).
 - OIDC session management does not work together with a connection that requires PAR.

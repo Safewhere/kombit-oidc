@@ -260,7 +260,6 @@ namespace WebAppNetCore
                 OnAuthorizationCodeReceived = async (context) =>
                 {
                     Console.WriteLine("OnAuthorizationCodeReceived.");
-                    Console.WriteLine("code = " + context.TokenEndpointRequest.Code);
 
                     var services = context.HttpContext.RequestServices;
                     var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
