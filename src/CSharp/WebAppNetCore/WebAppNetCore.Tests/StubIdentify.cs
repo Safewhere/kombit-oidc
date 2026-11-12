@@ -71,6 +71,11 @@ internal sealed class StubIdentify : HttpMessageHandler
     internal string TokenSigningAlgorithm { get; set; } = SecurityAlgorithms.RsaSha256;
 
     /// <summary>
+    /// Whether the stub signs the ID tokens. Without a signature, an ID token has the header alg "none" and an empty signature.
+    /// </summary>
+    internal bool SignIdTokens { get; set; } = true;
+
+    /// <summary>
     /// The nonce of an ID token for a code that was not registered with RegisterCode.
     /// </summary>
     internal string? Nonce { get; set; }
@@ -134,7 +139,7 @@ internal sealed class StubIdentify : HttpMessageHandler
             claims["nonce"] = nonce;
         }
 
-        return IssueToken(claims);
+        return IssueToken(claims, SignIdTokens);
     }
 
     internal string IssueAccessToken(string? jkt = null, string? certificateThumbprint = null)
@@ -267,7 +272,7 @@ internal sealed class StubIdentify : HttpMessageHandler
         return Json(HttpStatusCode.OK, new Dictionary<string, object> { ["active"] = true, ["token_type"] = "DPoP", ["client_id"] = ClientId });
     }
 
-    internal string IssueToken(Dictionary<string, object> claims)
+    internal string IssueToken(Dictionary<string, object> claims, bool signed = true)
     {
         var now = DateTime.UtcNow;
         var descriptor = new SecurityTokenDescriptor
@@ -278,7 +283,7 @@ internal sealed class StubIdentify : HttpMessageHandler
             NotBefore = now,
             Expires = now.AddMinutes(5),
             Claims = claims,
-            SigningCredentials = new SigningCredentials(SigningKey, TokenSigningAlgorithm)
+            SigningCredentials = signed ? new SigningCredentials(SigningKey, TokenSigningAlgorithm) : null
         };
         return new JsonWebTokenHandler().CreateToken(descriptor);
     }

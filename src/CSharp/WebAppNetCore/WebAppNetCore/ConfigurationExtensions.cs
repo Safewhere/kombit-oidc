@@ -272,6 +272,15 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// Accepts every TLS server certificate in the back-channel requests to Identify and to the sample resource server; default
+        /// false. Only for a test host with a certificate that the computer does not trust. Never turn it on for a production client.
+        /// </summary>
+        public static bool AcceptAnyServerCertificate(this IConfiguration configuration)
+        {
+            return ParseBool(configuration, "Testing:AcceptAnyServerCertificate");
+        }
+
+        /// <summary>
         /// The length of the nonce of the authorization request, from 43 to 64 characters; default 43. Only with
         /// Testing:EnableFaultInjection, for the live test of the longest nonce that FAPI 2.0 section 5.3.2.2 item 14 allows.
         /// </summary>
@@ -331,6 +340,7 @@ namespace WebAppNetCore
             }
 
             configuration.EnableFaultInjection();
+            configuration.AcceptAnyServerCertificate();
             configuration.NonceLength();
             configuration.KeepSessionAfterTokenExpiry();
             configuration.ValidIdTokenSigningAlgorithms();

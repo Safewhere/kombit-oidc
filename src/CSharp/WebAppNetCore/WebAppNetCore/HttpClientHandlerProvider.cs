@@ -8,25 +8,28 @@ namespace WebAppNetCore
         /// <summary>
         /// A handler that presents the client certificate in the TLS handshake, for mutual TLS (RFC 8705).
         /// </summary>
-        public static HttpClientHandler Create(X509Certificate2 clientCertificate)
+        public static HttpClientHandler Create(X509Certificate2 clientCertificate, bool acceptAnyServerCertificate)
         {
-            var handler = Create();
+            var handler = Create(acceptAnyServerCertificate);
             handler.ClientCertificateOptions = ClientCertificateOption.Manual;
             handler.ClientCertificates.Add(clientCertificate);
             return handler;
         }
 
-        public static HttpClientHandler Create()
+        /// <summary>
+        /// A handler that validates the TLS server certificate. With acceptAnyServerCertificate (the setting
+        /// Testing:AcceptAnyServerCertificate), it accepts every server certificate, for a test host with a certificate that the
+        /// computer does not trust.
+        /// </summary>
+        public static HttpClientHandler Create(bool acceptAnyServerCertificate)
         {
-#if DEBUG
-#warning This is for testing purpose only. In reality, all production sites must use trusted SSL certificate which will never cause any problem with validation.
-            return new HttpClientHandler()
+            var handler = new HttpClientHandler();
+            if (acceptAnyServerCertificate)
             {
-                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => { return true; }
-            };
-#endif
+                handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+            }
 
-            return new HttpClientHandler();
+            return handler;
         }
     }
 }

@@ -36,13 +36,20 @@ namespace WebAppNetCore
 
             .AddOpenIdConnect(connectOptions => InitializeConnectOptions(connectOptions, configuration));
 
+            var acceptAnyServerCertificate = configuration.AcceptAnyServerCertificate();
+            if (acceptAnyServerCertificate)
+            {
+                Console.WriteLine("Warning: Testing:AcceptAnyServerCertificate is true. The sample accepts every TLS server certificate of " +
+                    "Identify and of the sample resource server. Never use this setting for a production client.");
+            }
+
             services.AddHttpClient(IdentifyHttpClient.Name)
-                .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
+                .ConfigurePrimaryHttpMessageHandler(() => HttpClientHandlerProvider.Create(acceptAnyServerCertificate));
             // The certificate is loaded only when a request uses mutual TLS.
             services.AddSingleton<MutualTlsClientCertificate>();
             services.AddHttpClient(IdentifyHttpClient.MutualTlsName)
-                .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
-                    HttpClientHandlerProvider.Create(serviceProvider.GetRequiredService<MutualTlsClientCertificate>().Certificate));
+                .ConfigurePrimaryHttpMessageHandler(serviceProvider => HttpClientHandlerProvider.Create(
+                    serviceProvider.GetRequiredService<MutualTlsClientCertificate>().Certificate, acceptAnyServerCertificate));
             services.AddSingleton<IdentifyBackChannel>();
             services.AddSingleton<IdentifyMetadata>();
             services.AddSingleton<ClientAuthentication>();
@@ -52,7 +59,7 @@ namespace WebAppNetCore
             services.AddSingleton<PushedAuthorizationClient>();
             services.AddSingleton<TokenManagementClient>();
             services.AddHttpClient(SampleApiClient.HttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(HttpClientHandlerProvider.Create);
+                .ConfigurePrimaryHttpMessageHandler(() => HttpClientHandlerProvider.Create(acceptAnyServerCertificate));
             services.AddSingleton<SampleApiClient>();
             services.AddMemoryCache();
             services.AddSingleton<ClientSessionStore>();
@@ -118,7 +125,7 @@ namespace WebAppNetCore
                 connectOptions.TokenValidationParameters.ValidAlgorithms = validIdTokenSigningAlgorithms;
             }
             connectOptions.TokenValidationParameters.NameClaimType = ClaimTypes.NameIdentifier;
-            connectOptions.BackchannelHttpHandler = HttpClientHandlerProvider.Create();
+            connectOptions.BackchannelHttpHandler = HttpClientHandlerProvider.Create(configuration.AcceptAnyServerCertificate());
 
             connectOptions.Events = new OpenIdConnectEvents
             {
@@ -359,6 +366,14 @@ namespace WebAppNetCore
                 OnTokenValidated = async (context) =>
                 {
                     Console.WriteLine("OnTokenValidated.");
+                    // The handler does not require a signature for the ID token of the token endpoint, so the sample checks it first.
+                    var signatureFailure = IdTokenSignature.Validate(context.SecurityToken);
+                    if (signatureFailure != null)
+                    {
+                        context.Fail(signatureFailure);
+                        return;
+                    }
+
                     // The handler skips this validation when the application redeems the code, so the sample does it here.
                     // It checks the nonce of the ID token against the nonce cookie of this browser, and at_hash when present.
                     context.Options.ProtocolValidator.ValidateTokenResponse(new OpenIdConnectProtocolValidationContext

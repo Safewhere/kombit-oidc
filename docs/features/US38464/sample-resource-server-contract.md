@@ -23,7 +23,7 @@ Two connections take part. Both use `private_key_jwt`.
 
 | Connection | Role | Settings that the API needs |
 |---|---|---|
-| The client connection, for example `FAPI-TEST confidential` | Gets the access token | `ApplicationAudience` contains the API identifier (section 4). The connection knows the scopes of section 4. It must not get the audience `EntityIdentifier`, because the Admin REST API and the Runtime `/api/` routes accept that audience (SWSEC-2026-0055). |
+| The client connection, for example `FAPI-TEST confidential` | Gets the access token | `ApplicationAudience` contains the API identifier (section 4). The connection knows the scopes of section 4. It must not get the audience `EntityIdentifier`. |
 | A connection for the API, for example `FAPI-TEST sample API` with the client ID `fapi-test-api` | Calls introspection | `AllowTokenRevocationAndIntrospection` is true. It needs no grant type. It authenticates with a client assertion with the issuer as `aud`. Identify lets any client of the same authorization server introspect a token. |
 
 Identify puts every value of `ApplicationAudience` of the client connection into `aud` of the access token. A request parameter cannot select the audience.

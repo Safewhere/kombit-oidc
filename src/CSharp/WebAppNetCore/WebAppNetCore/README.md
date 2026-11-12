@@ -111,6 +111,7 @@ All keys are in the `OpenIdConnectOptions` section, except the keys that start w
 | `MutualTls:CertificatePath`, `MutualTls:CertificatePassword` | a PFX file and its password; no default | RFC 8705 section 2 | The client certificate in a PFX file. Keep the password in user secrets. |
 | `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
 | `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
+| `Testing:AcceptAnyServerCertificate` | `true`, `false`; default `false` | None | Accepts every TLS server certificate of Identify and of the sample resource server, also for mutual TLS. Only for a test host with a certificate that the computer does not trust. The sample writes a warning at startup. Never `true` for a production client. Before this setting, a Debug build always accepted every certificate. |
 | `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, `AssertionIssuerNotClient`, and `ClientIdNotSubject`. Without a value, these faults fail with a message. |
 | `Testing:NonceLength` | 43 to 64; default 43 | FAPI 5.3.2.2 item 14 | The length of the nonce of the authorization request. Only with `Testing:EnableFaultInjection`, to show that Identify accepts a nonce of 64 characters. |
 | `Testing:KeepSessionAfterTokenExpiry` | `true`, `false`; default `false` | None | The session of the sample does not end with the access token lifetime, so that **Call UserInfo** can send an expired access token. Only with `Testing:EnableFaultInjection`. |
@@ -159,8 +160,8 @@ Configure the OAuth connection as steps 1 to 4 of the Identify configuration gui
 
 1. System Setup, OAuth `additionalRules`: `{"authorize": {"includeIssuerInResponse": true}}`.
 2. Connection: `RequirePushedAuthorizationRequests=true` and `RequireDPoPBoundAccessTokens=true`.
-3. Connection: the code flow only, `TokenEndpointAuthenticationMethod=PrivateKeyJwt`, `IdTokenSigningAlgorithm=PS256`, `IssueNewRefreshTokenForEveryTokenExchange=false`, and `AllowRefreshToken=true` if you want to test refresh.
-4. Connection `AdditionalValidationRules`: PKCE with S256, an HTTPS redirect URI, the code and PAR lifetimes, `clientAssertion.audience=issuer`, and `clientJwt` with `PS256`.
+3. Connection: the code flow only, `TokenEndpointAuthenticationMethod=PrivateKeyJwt`, `JWSAlgorithm=RSASigning`, `IdTokenSigningAlgorithm=PS256`, `IssueNewRefreshTokenForEveryTokenExchange=false`, and `AllowRefreshToken=true` if you want to test refresh.
+4. Connection `AdditionalValidationRules`: the profile rule `profile.name=fapi2`, PKCE with S256, an HTTPS redirect URI, the code and PAR lifetimes, `clientAssertion.audience=issuer`, and `clientJwt` with `signingAlgorithms` `PS256` and `clockSkewInSeconds` from 10 to 60.
 
 The client keys:
 

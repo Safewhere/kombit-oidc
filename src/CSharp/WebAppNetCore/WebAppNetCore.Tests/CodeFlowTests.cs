@@ -165,6 +165,28 @@ public sealed class CodeFlowTests
         Assert.Contains("RS256", errorPage);
     }
 
+    [Theory]
+    [InlineData("PS256")]
+    [InlineData("")]
+    public async Task AnUnsignedIdTokenIsRejected(string validIdTokenSigningAlgorithms)
+    {
+        // ASP.NET Core does not require a signature for the ID token of the token endpoint, and ValidAlgorithms applies
+        // only to a signed token. The sample must reject the token itself.
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:ValidIdTokenSigningAlgorithms"] = validIdTokenSigningAlgorithms
+        });
+        factory.Identify.SignIdTokens = false;
+        using var client = SignInFlow.CreateHttpsClient(factory);
+        var request = await SignInFlow.StartAsync(client, factory);
+
+        using var callback = await SignInFlow.CompleteAsync(client, factory, request);
+
+        var errorPage = await SignInFlow.AssertErrorPageAsync(client, callback);
+        Assert.Equal("The ID token is not signed (alg 'none'). The sample accepts only a signed ID token.", SignInFlow.ErrorMessage(errorPage));
+        Assert.Empty(factory.Identify.RequestsTo(StubIdentify.UserInfoEndpoint));
+    }
+
     [Fact]
     public async Task AnIdTokenWithAnAllowedAlgorithmIsAccepted()
     {
