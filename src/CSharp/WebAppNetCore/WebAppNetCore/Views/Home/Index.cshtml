@@ -43,6 +43,12 @@
     }
 }
 
+@* The result of the last UserInfo or refresh action, above the long token display. *@
+@if (ViewData["Protocol"] is ProtocolViewModel protocol && !string.IsNullOrEmpty(protocol.Result))
+{
+    <div class="alert alert-warning" role="alert" id="protocolResult">@protocol.Result</div>
+}
+
 @if (accessToken != null)
 {
     <style>
@@ -86,3 +92,5 @@ else
 {
     <h1>Home Page</h1>
 }
+
+@await Html.PartialAsync("_Protocol", ViewData["Protocol"])

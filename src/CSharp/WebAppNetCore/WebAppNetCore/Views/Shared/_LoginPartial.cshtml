@@ -1,5 +1,7 @@
 @using Microsoft.Extensions.Options
 @using System.Security.Principal
+@using WebAppNetCore.OAuth
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 
 @{
     var availableLoas = new List<string> {
@@ -12,33 +14,51 @@
       "urn:dk:gov:saml:attribute:AssuranceLevel:3",
       "urn:dk:gov:saml:attribute:AssuranceLevel:4"
     };
-    string Loa = "";
 }
 
 @if (User.Identity.IsAuthenticated)
 {
     <div class="alert alert-success" role="alert"> Hello, @User.Identity.Name!</div>
-    <div class="alert alert-info" role="alert">
+}
+
+<div class="alert alert-info" role="alert">
+    @* The form tag helper adds the antiforgery token that /Account/SignIn requires. *@
+    <form method="post" asp-controller="Account" asp-action="SignIn">
         <label for="Loa">Assurance Level</label>
         <div class="input-group">
-            <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
+            <select id="Loa" name="loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
         </div>
         <br />
-        <label for="Loa">max_age</label>
+        <label for="max_age">max_age</label>
         <div class="input-group">
-            <input id="max_age" type="number" style="width:350px;max-width:350px;" />
+            <input id="max_age" name="max_age" type="number" style="width:350px;max-width:350px;" />
         </div>
+        @if (Configuration.EnableFaultInjection())
+        {
+            <partial name="_FaultSelect" model="FaultInjection.SignInFaults" />
+        }
         <br />
         <div class="input-group">
-            <a href="javascript:login(false, false);" class="btn btn-primary">Re-authenticate</a>
-            <a href="javascript:login(true, false);" class="btn btn-primary">Force Authentication</a>
-            <a href="javascript:login(false, true);" class="btn btn-primary">Passive Authentication</a>
+            @if (User.Identity.IsAuthenticated)
+            {
+                <button type="submit" class="btn btn-primary">Re-authenticate</button>
+                <button type="submit" name="forceLogin" value="true" class="btn btn-primary">Force Authentication</button>
+                <button type="submit" name="isPassive" value="true" class="btn btn-primary">Passive Authentication</button>
+            }
+            else
+            {
+                <button type="submit" class="btn btn-primary">Sign in</button>
+            }
         </div>
-    </div>
+    </form>
+</div>
+
+@if (User.Identity.IsAuthenticated)
+{
     <div class="alert alert-info" role="alert">
         <div class="input-group" style="display:flex;">
             <a asp-area="" asp-controller="Account" asp-action="SignOut" class="btn btn-primary">Sign out</a>
-            @if (ViewData["EnablePostLogout"] == "Yes")
+            @if (ViewData["EnablePostLogout"] == "Yes" && ViewData["EndSessionUri"] != null)
             {
                 <form action="@ViewData["EndSessionUri"]" enctype="application/x-www-form-urlencoded" method="post" style="padding-left:5px">
                     @Html.AntiForgeryToken()
@@ -51,42 +71,9 @@
     </div>
 
 
-    @if (ViewData["EnableSessionManagement"] == "Yes")
+    @if (ViewData["EnableSessionManagement"] == "Yes" && ViewData["CheckSessionIframeUri"] != null)
     {
         <iframe frameborder="0" allowtransparency="true" height="0" width="0" src="@Url.Action("RPIFrame", "Account")"></iframe>
         <iframe frameborder="0" allowtransparency="true" height="0" width="0" src='@ViewData["CheckSessionIframeUri"]' id="opIFrame"></iframe>
     }
 }
-else
-{
-    <div class="alert alert-info">
-        <label for="Loa">Assurance Level</label>
-        <div class="input-group">
-            <select id="Loa" class="form-select" asp-items="@(new SelectList(availableLoas))" style="width:350px;max-width:350px;"></select>
-        </div>
-        <br />
-        <label for="Loa">max_age</label>
-        <div class="input-group">
-            <input id="max_age" type="number" style="width:350px;max-width:350px;" />
-        </div>
-
-        <br />
-        <div class="input-group">
-            <a href="javascript:login(false, false);" class="btn btn-primary">Sign in</a>
-        </div>
-    </div>
-}
-
-<script>
-    function login(forceLogin, isPassive)
-    {
-        var loa = document.getElementById("Loa").value;
-        var max_age = document.getElementById("max_age").value;
-        var url = "/Account/Signin?loa=" + loa + "&forceLogin=" + forceLogin + "&isPassive=" + isPassive;
-        if(max_age !== '')
-        {
-            url += "&max_age=" + max_age;
-        }
-        window.location.href = url;
-    }
-</script>

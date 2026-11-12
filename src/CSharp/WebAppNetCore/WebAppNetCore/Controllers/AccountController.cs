@@ -13,8 +13,12 @@ using Microsoft.Extensions.Configuration;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography.X509Certificates;
+using System.Globalization;
+using WebAppNetCore.Models;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Controllers
 {
@@ -32,9 +36,11 @@ namespace WebAppNetCore.Controllers
             };
         }
 
-        // GET: /Account/SignIn
-        [HttpGet]
-        public IActionResult SignIn([FromQuery] string loa, [FromQuery] string max_age, [FromQuery] bool forceLogin, [FromQuery] bool isPassive)
+        // POST: /Account/SignIn
+        // POST with an antiforgery token protects the flow initiation against CSRF (FAPI 2.0 section 5.3.3.1 item 12).
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> SignIn([FromForm] string loa, [FromForm] string max_age, [FromForm] bool forceLogin, [FromForm] bool isPassive, [FromForm] string fault)
         {
             var properties = new AuthenticationProperties { RedirectUri = "/" };
             if(!string.IsNullOrEmpty(loa))
@@ -47,7 +53,328 @@ namespace WebAppNetCore.Controllers
             else if(isPassive)
                 properties.SetParameter("prompt", "none");
 
-            return Challenge(properties, OpenIdConnectDefaults.AuthenticationScheme);
+            FaultInjection.Write(properties, FaultInjection.Parse(fault, configuration, FaultInjection.SignInFaults));
+
+            try
+            {
+                await HttpContext.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme, properties);
+            }
+            catch (Exception exception) when (exception is OAuthClientException || exception is InvalidOperationException)
+            {
+                // For example a discovery document of another issuer, a PAR error response, or PAR required without a PAR endpoint.
+                TempData[ErrorPage.MessageKey] = exception.Message;
+                return RedirectToAction(nameof(HomeController.Error), "Home");
+            }
+
+            return new EmptyResult();
+        }
+
+        // POST: /Account/UserInfo
+        // Calls UserInfo with the access token of the session: with the DPoP scheme and a proof for a DPoP-bound token.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> UserInfo([FromServices] UserInfoClient userInfoClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var session = sessionStore.Get(result.Properties);
+            var userInfoFault = FaultInjection.Parse(fault, configuration, FaultInjection.UserInfoFaults);
+            var accessToken = result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken);
+            var tokenType = result.Properties.GetTokenValue("token_type");
+            if (userInfoFault == Fault.IdTokenAtUserInfo)
+            {
+                // A token substitution: the ID token of the sign-in as a bearer access token.
+                accessToken = result.Properties.GetTokenValue(OpenIdConnectConstants.IdToken);
+                tokenType = "Bearer";
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    TempData[ProtocolViewModel.ResultKey] = "The fault IdTokenAtUserInfo needs the ID token of the sign-in. The UserInfo request was not sent.";
+                    return RedirectToAction(nameof(HomeController.Index), "Home");
+                }
+
+                session?.Trace.Add("Fault injection", "IdTokenAtUserInfo: the UserInfo request sends the ID token of the sign-in with the Bearer scheme");
+            }
+
+            try
+            {
+                var userInfo = await userInfoClient.GetAsync(accessToken, tokenType, session, userInfoFault, HttpContext.RequestAborted);
+                if (userInfo != null && session != null)
+                {
+                    session.LastUserInfo = ProtocolTrace.FormatJson(userInfo.Json);
+                }
+
+                TempData[ProtocolViewModel.ResultKey] = userInfo == null ? "The discovery document has no UserInfo endpoint." : "The UserInfo request succeeded.";
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/CallSampleApi
+        // Reads the profile at the sample resource server with the access token of the session, the DPoP scheme, and a proof.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> CallSampleApi([FromServices] SampleApiClient sampleApiClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            return SendToSampleApiAsync(sampleApiClient, sessionStore, SampleApiOperation.ReadProfile, null, fault);
+        }
+
+        // POST: /Account/WriteNote
+        // Writes a note at the sample resource server, which needs the scope sample-api.write.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> WriteNote([FromServices] SampleApiClient sampleApiClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string text, [FromForm] string fault)
+        {
+            return SendToSampleApiAsync(sampleApiClient, sessionStore, SampleApiOperation.WriteNote, text, fault);
+        }
+
+        private async Task<IActionResult> SendToSampleApiAsync(SampleApiClient sampleApiClient, ClientSessionStore sessionStore, SampleApiOperation operation, string text, string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var session = sessionStore.Get(result.Properties);
+            var apiFault = FaultInjection.Parse(fault, configuration, FaultInjection.SampleApiFaults);
+            if (apiFault != Fault.None)
+            {
+                session?.Trace.Add("Fault injection", apiFault + ": " + FaultInjection.Describe(apiFault));
+            }
+
+            try
+            {
+                var response = await sampleApiClient.SendAsync(operation, text, result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.IdToken), session, apiFault, HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = response.Describe();
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+            catch (HttpRequestException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = "The sample API cannot be reached: " + exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/Introspect
+        // Introspects the access token of the session (RFC 7662) and shows the response.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Introspect([FromServices] TokenManagementClient tokenManagementClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            try
+            {
+                var introspection = await tokenManagementClient.IntrospectAsync(
+                    result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken),
+                    sessionStore.Get(result.Properties),
+                    FaultInjection.Parse(fault, configuration, FaultInjection.IntrospectionFaults),
+                    HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = "The introspection succeeded: " + introspection.Replace("\r", string.Empty).Replace("\n", " ");
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/Revoke
+        // Revokes the access token of the session (RFC 7009). The session keeps the token, so UserInfo shows the revocation.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Revoke([FromServices] TokenManagementClient tokenManagementClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            // RevokeRefreshToken revokes the refresh token instead; the next refresh and UserInfo show the effect.
+            var revocationFault = FaultInjection.Parse(fault, configuration, FaultInjection.RevocationFaults);
+            var revokesRefreshToken = revocationFault == Fault.RevokeRefreshToken;
+            var token = result.Properties.GetTokenValue(revokesRefreshToken ? "refresh_token" : OpenIdConnectConstants.AccessToken);
+            if (revokesRefreshToken && string.IsNullOrEmpty(token))
+            {
+                TempData[ProtocolViewModel.ResultKey] = "The fault RevokeRefreshToken needs a refresh token, and the session has none. The request was not sent.";
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            try
+            {
+                await tokenManagementClient.RevokeAsync(token, sessionStore.Get(result.Properties), revocationFault, HttpContext.RequestAborted);
+                TempData[ProtocolViewModel.ResultKey] = revokesRefreshToken
+                    ? "The revocation succeeded. The session keeps the revoked refresh token and its access token."
+                    : "The revocation succeeded. The session keeps the revoked access token.";
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/ClientCredentials
+        // Gets a token with the client credentials grant, without a sign-in. With DPoP:BindAccessTokens, the request has a proof of a new key.
+        // The fault PasswordGrant sends a password grant instead, and NoDPoPProof sends the request without the proof.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ClientCredentials([FromServices] TokenClient tokenClient, [FromForm] string fault)
+        {
+            using var dpopKey = configuration.DPoPBindAccessTokens() ? DPoPKey.Create() : null;
+            var grantFault = FaultInjection.Parse(fault, configuration, FaultInjection.ClientCredentialsFaults);
+            try
+            {
+                if (grantFault == Fault.NoDPoPProof && dpopKey == null)
+                {
+                    // Without DPoP the request has no proof anyway, and the result would look like an accepted violation.
+                    throw new OAuthClientException("The fault NoDPoPProof needs DPoP:BindAccessTokens=true. The client credentials request was not sent.");
+                }
+
+                var response = await tokenClient.ClientCredentialsAsync(grantFault == Fault.NoDPoPProof ? null : dpopKey, grantFault, HttpContext.RequestAborted);
+                var jkt = AccessTokenInspector.ReadConfirmationThumbprint(response.AccessToken);
+                var bound = dpopKey != null && jkt == dpopKey.Thumbprint;
+                TempData[ProtocolViewModel.ResultKey] = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "The {0} request succeeded: token_type {1}, expires_in {2}, scope {3}, cnf.jkt {4}, Bound to the key: {5}.",
+                    grantFault == Fault.PasswordGrant ? "password grant" : "client credentials",
+                    response.TokenType, response.ExpiresIn ?? "(none)", string.IsNullOrEmpty(response.Scope) ? "(none)" : response.Scope, jkt ?? "(none)", bound ? "Yes" : "No");
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        // POST: /Account/Refresh
+        // Uses the refresh token with the DPoP key of the sign-in, and stores the new access token in the session.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Refresh([FromServices] TokenClient tokenClient, [FromServices] ClientSessionStore sessionStore, [FromForm] string fault)
+        {
+            var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            if (!result.Succeeded)
+            {
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var refreshToken = result.Properties.GetTokenValue("refresh_token");
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                TempData[ProtocolViewModel.ResultKey] = "The session has no refresh token. Identify issues one when the connection has AllowRefreshToken=true.";
+                return RedirectToAction(nameof(HomeController.Index), "Home");
+            }
+
+            var session = sessionStore.Get(result.Properties);
+            var refreshFault = FaultInjection.Parse(fault, configuration, FaultInjection.RefreshFaults);
+            try
+            {
+                if (refreshFault == Fault.ReuseRotatedRefreshToken)
+                {
+                    TempData[ProtocolViewModel.ResultKey] = await RefreshThenReuseOldTokenAsync(tokenClient, result, refreshToken, session);
+                    return RedirectToAction(nameof(HomeController.Index), "Home");
+                }
+
+                if (refreshFault == Fault.AccessTokenAsRefreshToken)
+                {
+                    TempData[ProtocolViewModel.ResultKey] = await RefreshWithAccessTokenAsync(tokenClient, result, session);
+                    return RedirectToAction(nameof(HomeController.Index), "Home");
+                }
+
+                var response = await tokenClient.RefreshAsync(refreshToken, session, refreshFault, HttpContext.RequestAborted);
+                var rotated = await StoreRefreshedTokensAsync(result, response, refreshToken);
+                TempData[ProtocolViewModel.ResultKey] = rotated
+                    ? "The refresh succeeded. Identify returned a new refresh token, and the sample stored it."
+                    : "The refresh succeeded. The refresh token is unchanged.";
+            }
+            catch (OAuthClientException exception)
+            {
+                TempData[ProtocolViewModel.ResultKey] = exception.Message;
+            }
+
+            return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        /// <summary>
+        /// The fault ReuseRotatedRefreshToken: a refresh that rotates the refresh token, whose tokens the sample stores, and then a
+        /// refresh with the old refresh token. An error of the second refresh is the result, and the next refresh uses the new token.
+        /// </summary>
+        private async Task<string> RefreshThenReuseOldTokenAsync(TokenClient tokenClient, AuthenticateResult result, string refreshToken, ClientSession session)
+        {
+            var response = await tokenClient.RefreshAsync(refreshToken, session, Fault.None, HttpContext.RequestAborted);
+            if (!await StoreRefreshedTokensAsync(result, response, refreshToken))
+            {
+                return "ReuseRotatedRefreshToken: the refresh succeeded, but Identify returned no new refresh token, so there is no old one to send. " +
+                    "The connection must issue a new refresh token for every exchange.";
+            }
+
+            session?.Trace.Add("Fault injection", "ReuseRotatedRefreshToken: the next refresh request sends the old refresh token");
+            await tokenClient.RefreshAsync(refreshToken, session, Fault.None, HttpContext.RequestAborted);
+            return "ReuseRotatedRefreshToken: Identify accepted the old refresh token. The sample keeps the tokens of the first refresh.";
+        }
+
+        /// <summary>
+        /// The fault AccessTokenAsRefreshToken: a refresh request with the access token of the session as the refresh token, a
+        /// token substitution. The sample keeps its tokens, also when the server accepts the request.
+        /// </summary>
+        private async Task<string> RefreshWithAccessTokenAsync(TokenClient tokenClient, AuthenticateResult result, ClientSession session)
+        {
+            session?.Trace.Add("Fault injection", "AccessTokenAsRefreshToken: the refresh request sends the access token as the refresh token");
+            await tokenClient.RefreshAsync(result.Properties.GetTokenValue(OpenIdConnectConstants.AccessToken), session, Fault.None, HttpContext.RequestAborted);
+            return "AccessTokenAsRefreshToken: Identify accepted the access token as a refresh token. The sample keeps its tokens.";
+        }
+
+        /// <summary>
+        /// Stores the tokens of a refresh response in the session cookie. Returns true when Identify returned a new refresh token.
+        /// </summary>
+        private async Task<bool> StoreRefreshedTokensAsync(AuthenticateResult result, OpenIdConnectMessage response, string refreshToken)
+        {
+            // The sample keeps the ID token of the sign-in, which the handler validated.
+            var tokens = result.Properties.GetTokens().ToDictionary(t => t.Name, t => t.Value);
+            tokens[OpenIdConnectConstants.AccessToken] = response.AccessToken;
+            if (!string.IsNullOrEmpty(response.TokenType))
+            {
+                tokens["token_type"] = response.TokenType;
+            }
+
+            // FAPI 2.0 asks for no routine rotation (section 5.3.2.1 item 9). When Identify returns a refresh token anyway, it
+            // replaces the old one (section 5.3.3.1 item 6).
+            var rotated = !string.IsNullOrEmpty(response.RefreshToken) && response.RefreshToken != refreshToken;
+            if (rotated)
+            {
+                tokens["refresh_token"] = response.RefreshToken;
+            }
+
+            if (int.TryParse(response.ExpiresIn, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expiresIn))
+            {
+                tokens["expires_at"] = DateTimeOffset.UtcNow.AddSeconds(expiresIn).ToString("o", CultureInfo.InvariantCulture);
+            }
+
+            result.Properties.StoreTokens(tokens.Select(t => new AuthenticationToken { Name = t.Key, Value = t.Value }));
+            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal, result.Properties);
+            return rotated;
         }
 
         // GET: /Account/SignOut
@@ -81,29 +408,54 @@ namespace WebAppNetCore.Controllers
             return RedirectToAction("SignedOut", "Account");
         }
 
-        public IActionResult ReauthenticationCallBack()
+        public async Task<IActionResult> ReauthenticationCallBack([FromServices] IdentifyMetadata identifyMetadata)
         {
-            InitializeDataForRPFrame();
+            var failure = await InitializeDataForRPFrameAsync(identifyMetadata);
+            if (failure != null)
+            {
+                return failure;
+            }
+
             ViewData["Action"] = "ReauthenticationCallBack";
             return View("RPIFrame");
         }
 
-        public ActionResult RPIFrame()
+        public async Task<IActionResult> RPIFrame([FromServices] IdentifyMetadata identifyMetadata)
         {
-            InitializeDataForRPFrame();
-            ViewData["Action"] = "RPIFrame";
+            var failure = await InitializeDataForRPFrameAsync(identifyMetadata);
+            if (failure != null)
+            {
+                return failure;
+            }
 
+            ViewData["Action"] = "RPIFrame";
             return View();
         }
 
-        private void InitializeDataForRPFrame()
+        /// <summary>
+        /// Sets the values of the RP frame (OpenID Connect Session Management). The authorization endpoint of the prompt=none request and
+        /// the origin of the OP frame come from the discovery document, after the issuer check of IdentifyMetadata.
+        /// </summary>
+        private async Task<IActionResult> InitializeDataForRPFrameAsync(IdentifyMetadata identifyMetadata)
         {
+            OpenIdConnectConfiguration metadata;
+            try
+            {
+                metadata = await identifyMetadata.GetAsync(HttpContext.RequestAborted);
+                IdentifyMetadata.RequireEndpoint(metadata.AuthorizationEndpoint, "authorization_endpoint");
+                IdentifyMetadata.RequireEndpoint(metadata.CheckSessionIframe, "check_session_iframe");
+            }
+            catch (Exception exception) when (exception is OAuthClientException || exception is InvalidOperationException)
+            {
+                return Content("The session check is not available: " + exception.Message, "text/plain");
+            }
+
             var sessionState = HttpContext.User.Claims.Where(x => x.Type == OpenIdConnectConstants.SessionState).Select(x => x.Value).FirstOrDefault();
             ViewData[OpenIdConnectConstants.ClientId] = configuration.ClientId();
             ViewData[OpenIdConnectConstants.SessionState] = sessionState;
-            ViewData["OPDomain"] = configuration.IssuerDomain();
-            var authorizationRequest = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, configuration);
-            ViewData["Reauthenticate"] = authorizationRequest;
+            ViewData["OPDomain"] = new Uri(metadata.CheckSessionIframe).GetLeftPart(UriPartial.Authority);
+            ViewData["Reauthenticate"] = OpenIdConnectHelper.GenerateReauthenticateUri(HttpContext, configuration, metadata.AuthorizationEndpoint);
+            return null;
         }
 
         // GET: /Account/FrontChannelLogout

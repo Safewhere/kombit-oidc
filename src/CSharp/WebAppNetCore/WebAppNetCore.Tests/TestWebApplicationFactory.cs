@@ -1,4 +1,8 @@
 using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,20 +12,43 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Http.Json;
+using WebAppNetCore.OAuth;
 
 namespace WebAppNetCore.Tests;
 
 internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    internal const string ProviderAuthorizationEndpoint = "https://provider.test/authorize";
-    internal const string ProviderIssuer = "https://provider.test";
+    internal const string ProviderAuthorizationEndpoint = StubIdentify.AuthorizationEndpoint;
+    internal const string ProviderIssuer = StubIdentify.Issuer;
+    internal const string ClientId = "integration-test-client";
+    internal const string ClientSecret = "integration-test-secret";
 
     private readonly string authorizationEndpointMethod;
+    private readonly IDictionary<string, string?> settings;
 
-    internal TestWebApplicationFactory(string authorizationEndpointMethod = "GET")
+    internal TestWebApplicationFactory(string authorizationEndpointMethod = "GET", IDictionary<string, string?>? settings = null)
     {
         this.authorizationEndpointMethod = authorizationEndpointMethod;
+        this.settings = settings ?? new Dictionary<string, string?>();
     }
+
+    internal StubIdentify Identify { get; } = new(ClientId);
+
+    /// <summary>The sample resource server, for the calls of /Account/CallSampleApi and /Account/WriteNote.</summary>
+    internal StubSampleApi SampleApi { get; } = new();
+
+    /// <summary>Whether the discovery document has pushed_authorization_request_endpoint.</summary>
+    internal bool PublishParEndpoint { get; init; } = true;
+
+    /// <summary>Whether the discovery document has authorization_response_iss_parameter_supported=true (RFC 9207).</summary>
+    internal bool AdvertiseIssuerParameter { get; init; }
+
+    /// <summary>Whether the discovery document has mtls_endpoint_aliases (RFC 8705 section 5), as Identify publishes them.</summary>
+    internal bool PublishMtlsEndpointAliases { get; init; } = true;
+
+    /// <summary>Whether mtls_endpoint_aliases has userinfo_endpoint. An older Identify has no UserInfo alias.</summary>
+    internal bool PublishMtlsUserInfoAlias { get; init; } = true;
 
     protected override IWebHostBuilder CreateWebHostBuilder()
     {
@@ -34,22 +61,30 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            var values = new Dictionary<string, string?>
             {
-                ["OpenIdConnectOptions:ClientId"] = "integration-test-client",
-                ["OpenIdConnectOptions:ClientSecret"] = "integration-test-secret",
+                ["OpenIdConnectOptions:ClientId"] = ClientId,
+                ["OpenIdConnectOptions:ClientSecret"] = ClientSecret,
                 ["OpenIdConnectOptions:ResponseType"] = "code",
                 ["OpenIdConnectOptions:RequireNonce"] = "true",
                 ["OpenIdConnectOptions:ResponseMode"] = "",
                 ["OpenIdConnectOptions:AuthorizationEndpointMethod"] = authorizationEndpointMethod,
                 ["OpenIdConnectOptions:ClaimsIssuer"] = ProviderIssuer,
-                ["OpenIdConnectOptions:IssuerDomain"] = ProviderIssuer,
                 ["OpenIdConnectOptions:Scope"] = "openid",
                 ["OpenIdConnectOptions:EnableSessionManagement"] = "false",
                 ["OpenIdConnectOptions:EnablePostLogout"] = "false",
-                ["OpenIdConnectOptions:CheckSessionIframeUri"] = "https://provider.test/session",
                 ["OpenIdConnectOptions:TokenAuthnMethod"] = "client_secret_post"
-            });
+            };
+            foreach (var setting in settings)
+            {
+                values[setting.Key] = setting.Value;
+            }
+
+            // Only the values above. The appsettings.json of a developer, user secrets, and environment variables must not
+            // change a test result. A building-block setting that a test does not set uses its default, which is the value
+            // of the committed appsettings.json.
+            configuration.Sources.Clear();
+            configuration.AddInMemoryCollection(values);
         });
 
         builder.ConfigureTestServices(services =>
@@ -59,24 +94,71 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 options =>
                 {
                     options.Configuration = CreateProviderConfiguration();
+                    // The sample sends PAR, token, and UserInfo requests itself. The handler must not call Identify.
                     options.BackchannelHttpHandler = new RejectingHttpMessageHandler();
                 });
+            services.AddHttpClient(IdentifyHttpClient.Name)
+                .ConfigurePrimaryHttpMessageHandler(() => Identify);
+            // The test server has no TLS. The HttpClient for mutual TLS marks its requests with the x5t#S256 value of the configured
+            // certificate instead, so the stub can see which requests present the certificate.
+            services.AddHttpClient(IdentifyHttpClient.MutualTlsName)
+                .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+                    new ClientCertificateHeaderHandler(serviceProvider.GetRequiredService<MutualTlsClientCertificate>().Thumbprint) { InnerHandler = Identify });
+            services.AddHttpClient(SampleApiClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => SampleApi);
+            services.AddSingleton<IStartupFilter, TestSessionEndpointStartupFilter>();
         });
     }
 
-    private static OpenIdConnectConfiguration CreateProviderConfiguration()
+    private OpenIdConnectConfiguration CreateProviderConfiguration()
     {
-        return OpenIdConnectConfiguration.Create($$"""
+        var parAlias = PublishParEndpoint ? $", \"pushed_authorization_request_endpoint\": \"{StubIdentify.MtlsParEndpoint}\"" : string.Empty;
+        var userInfoAlias = PublishMtlsUserInfoAlias ? $", \"userinfo_endpoint\": \"{StubIdentify.MtlsUserInfoEndpoint}\"" : string.Empty;
+        var mtlsEndpointAliases = PublishMtlsEndpointAliases
+            ? $"\"mtls_endpoint_aliases\": {{ \"token_endpoint\": \"{StubIdentify.MtlsTokenEndpoint}\", \"revocation_endpoint\": \"{StubIdentify.MtlsRevocationEndpoint}\", "
+              + $"\"introspection_endpoint\": \"{StubIdentify.MtlsIntrospectionEndpoint}\"{parAlias}{userInfoAlias} }},"
+            : string.Empty;
+        var configuration = OpenIdConnectConfiguration.Create($$"""
             {
+              {{mtlsEndpointAliases}}
               "issuer": "{{ProviderIssuer}}",
               "authorization_endpoint": "{{ProviderAuthorizationEndpoint}}",
-              "token_endpoint": "{{ProviderIssuer}}/token",
-              "userinfo_endpoint": "{{ProviderIssuer}}/userinfo",
-              "end_session_endpoint": "{{ProviderIssuer}}/logout",
-              "jwks_uri": "{{ProviderIssuer}}/jwks",
-              "pushed_authorization_request_endpoint": "{{ProviderIssuer}}/par"
+              "token_endpoint": "{{StubIdentify.TokenEndpoint}}",
+              "userinfo_endpoint": "{{StubIdentify.UserInfoEndpoint}}",
+              "end_session_endpoint": "{{StubIdentify.EndSessionEndpoint}}",
+              "check_session_iframe": "{{StubIdentify.CheckSessionIframe}}",
+              "introspection_endpoint": "{{StubIdentify.IntrospectionEndpoint}}",
+              "revocation_endpoint": "{{StubIdentify.RevocationEndpoint}}",
+              "jwks_uri": "{{ProviderIssuer}}/certs.idp"
             }
             """);
+        if (PublishParEndpoint)
+        {
+            configuration.PushedAuthorizationRequestEndpoint = StubIdentify.ParEndpoint;
+        }
+
+        configuration.AuthorizationResponseIssParameterSupported = AdvertiseIssuerParameter;
+
+        configuration.SigningKeys.Add(Identify.SigningKey);
+        return configuration;
+    }
+
+    /// <summary>
+    /// Adds StubIdentify.ClientCertificateHeader to each request, in place of the TLS client certificate of mutual TLS.
+    /// </summary>
+    private sealed class ClientCertificateHeaderHandler : DelegatingHandler
+    {
+        private readonly string certificateThumbprint;
+
+        internal ClientCertificateHeaderHandler(string certificateThumbprint)
+        {
+            this.certificateThumbprint = certificateThumbprint;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.Add(StubIdentify.ClientCertificateHeader, certificateThumbprint);
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     private sealed class RejectingHttpMessageHandler : HttpMessageHandler
@@ -88,5 +170,42 @@ internal sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             throw new InvalidOperationException(
                 $"Unexpected OIDC backchannel request: {request.Method} {request.RequestUri}");
         }
+    }
+
+    /// <summary>
+    /// Adds /test/session, which returns the claims, tokens, and items of the cookie session as JSON.
+    /// </summary>
+    private sealed class TestSessionEndpointStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+        {
+            return app =>
+            {
+                app.Map(TestSession.Path, branch => branch.Run(async context =>
+                {
+                    var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    var session = new TestSession(
+                        result.Principal?.Claims.Select(c => new TestClaim(c.Type, c.Value)).ToList() ?? new List<TestClaim>(),
+                        result.Properties?.GetTokens().ToDictionary(t => t.Name, t => t.Value) ?? new Dictionary<string, string>(),
+                        result.Properties?.Items.ToDictionary(i => i.Key, i => i.Value) ?? new Dictionary<string, string?>());
+                    await context.Response.WriteAsJsonAsync(session);
+                }));
+                next(app);
+            };
+        }
+    }
+}
+
+internal sealed record TestClaim(string Type, string Value);
+
+internal sealed record TestSession(List<TestClaim> Claims, Dictionary<string, string> Tokens, Dictionary<string, string?> Items)
+{
+    internal const string Path = "/test/session";
+
+    internal string? Claim(string type) => Claims.FirstOrDefault(c => c.Type == type)?.Value;
+
+    internal static async Task<TestSession> GetAsync(HttpClient client)
+    {
+        return (await client.GetFromJsonAsync<TestSession>(Path))!;
     }
 }

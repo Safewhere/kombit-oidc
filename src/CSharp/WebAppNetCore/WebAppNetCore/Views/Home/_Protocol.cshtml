@@ -1,0 +1,162 @@
+@model WebAppNetCore.Models.ProtocolViewModel
+@using WebAppNetCore.OAuth
+
+<style>
+    .protocolTable td {
+        vertical-align: top;
+        padding: 2px 10px 2px 0;
+    }
+
+    .protocolTable pre, .protocolJson {
+        white-space: pre-wrap;
+        word-wrap: anywhere;
+        background-color: #f4f4f9;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-family: monospace;
+        max-height: 400px;
+        overflow: auto;
+        margin: 0;
+        padding: 6px;
+    }
+
+    .protocolTrace summary {
+        cursor: pointer;
+    }
+</style>
+
+<div class="alert alert-info" role="alert" id="buildingBlocks">
+    <h4 class="alert-heading">OAuth building blocks</h4>
+    <table class="protocolTable">
+        @foreach (var block in Model.BuildingBlocks)
+        {
+            <tr><td>@block.Key</td><td><code>@block.Value</code></td></tr>
+        }
+    </table>
+    @foreach (var warning in Model.Warnings)
+    {
+        <div class="alert alert-danger" role="alert" style="margin-top:8px">@warning</div>
+    }
+</div>
+
+@if (Model.IsAuthenticated)
+{
+    <div class="alert alert-info" role="alert" id="tokenBinding">
+        <h4 class="alert-heading">Access token</h4>
+        <table class="protocolTable">
+            <tr><td>token_type</td><td><code>@(Model.TokenType ?? "(none)")</code></td></tr>
+            <tr><td>cnf.jkt of the access token</td><td><code>@(Model.AccessTokenJkt ?? "(none)")</code></td></tr>
+            <tr><td>Thumbprint of the DPoP key of the sign-in</td><td><code>@(Model.DPoPKeyThumbprint ?? "(none)")</code></td></tr>
+            @if (Model.BindingMatches.HasValue)
+            {
+                <tr><td>Bound to the key of the sign-in</td><td><strong>@(Model.BindingMatches.Value ? "Yes" : "No")</strong></td></tr>
+            }
+            <tr><td>Refresh token</td><td><code>@(Model.HasRefreshToken ? "(present)" : "(none)")</code></td></tr>
+            <tr><td>expires_at</td><td><code>@(Model.ExpiresAt ?? "(none)")</code></td></tr>
+        </table>
+        @if (!Model.SessionStateAvailable)
+        {
+            <p>The server-side state of this sign-in is gone, for example after a restart. Sign in again before you call UserInfo or refresh with DPoP.</p>
+        }
+        <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:8px">
+            <form method="post" asp-controller="Account" asp-action="UserInfo">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.UserInfoFaults" />
+                }
+                <button type="submit" class="btn btn-primary">Call UserInfo</button>
+            </form>
+            <form method="post" asp-controller="Account" asp-action="Refresh">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.RefreshFaults" />
+                }
+                <button type="submit" class="btn btn-primary">Refresh access token</button>
+            </form>
+            <form method="post" asp-controller="Account" asp-action="Introspect">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.IntrospectionFaults" />
+                }
+                <button type="submit" class="btn btn-primary">Introspect access token</button>
+            </form>
+            <form method="post" asp-controller="Account" asp-action="Revoke">
+                @if (Model.FaultInjectionEnabled)
+                {
+                    <partial name="_FaultSelect" model="FaultInjection.RevocationFaults" />
+                }
+                <button type="submit" class="btn btn-primary">Revoke access token</button>
+            </form>
+            @if (Model.SampleApiEnabled)
+            {
+                <form method="post" asp-controller="Account" asp-action="CallSampleApi">
+                    @if (Model.FaultInjectionEnabled)
+                    {
+                        <partial name="_FaultSelect" model="FaultInjection.SampleApiFaults" />
+                    }
+                    <button type="submit" class="btn btn-primary">Call sample API</button>
+                </form>
+                <form method="post" asp-controller="Account" asp-action="WriteNote">
+                    <input name="text" value="A note from the sample client" maxlength="200" class="form-control" style="max-width:350px; margin:5px 0" />
+                    @if (Model.FaultInjectionEnabled)
+                    {
+                        <partial name="_FaultSelect" model="FaultInjection.SampleApiFaults" />
+                    }
+                    <button type="submit" class="btn btn-primary">Write note</button>
+                </form>
+            }
+        </div>
+    </div>
+
+    @if (Model.PushedAuthorization != null)
+    {
+        <div class="alert alert-info" role="alert" id="pushedAuthorization">
+            <h4 class="alert-heading">Pushed authorization request</h4>
+            <table class="protocolTable">
+                <tr><td>HTTP status</td><td><code>@Model.PushedAuthorization.StatusCode</code></td></tr>
+                <tr><td>request_uri</td><td><code>@Model.PushedAuthorization.RequestUri</code></td></tr>
+                <tr><td>expires_in</td><td><code>@(Model.PushedAuthorization.ExpiresIn?.ToString() ?? "(none)")</code></td></tr>
+            </table>
+        </div>
+    }
+
+    @if (Model.LastUserInfo != null)
+    {
+        <div class="alert alert-info" role="alert" id="lastUserInfo">
+            <h4 class="alert-heading">Last UserInfo response</h4>
+            <div class="protocolJson">@Model.LastUserInfo</div>
+        </div>
+    }
+
+    @if (Model.Trace.Count > 0)
+    {
+        <div class="alert alert-info protocolTrace" role="alert" id="protocolTrace">
+            <h4 class="alert-heading">Protocol trace</h4>
+            <p>Client secrets, code verifiers, and JWT signatures are not shown.</p>
+            @foreach (var entry in Model.Trace)
+            {
+                <details>
+                    <summary><code>@entry.Time.ToString("HH:mm:ss")</code> @entry.Step: @entry.Summary</summary>
+                    <table class="protocolTable">
+                        @foreach (var detail in entry.Details)
+                        {
+                            <tr><td>@detail.Key</td><td><pre>@detail.Value</pre></td></tr>
+                        }
+                    </table>
+                </details>
+            }
+        </div>
+    }
+}
+
+<div class="alert alert-info" role="alert" id="clientCredentials">
+    <h4 class="alert-heading">Client credentials</h4>
+    <p>A token for the client itself (RFC 6749 section 4.4), without a sign-in. Use it with a connection that allows the client credentials flow.</p>
+    <form method="post" asp-controller="Account" asp-action="ClientCredentials">
+        @if (Model.FaultInjectionEnabled)
+        {
+            <partial name="_FaultSelect" model="FaultInjection.ClientCredentialsFaults" />
+        }
+        <button type="submit" class="btn btn-primary">Get client credentials token</button>
+    </form>
+</div>

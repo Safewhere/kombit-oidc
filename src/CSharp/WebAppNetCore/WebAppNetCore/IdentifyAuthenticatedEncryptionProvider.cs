@@ -126,9 +126,6 @@ namespace WebAppNetCore
                 var encKey = new byte[encKeySize];
                 Array.Copy(symmetricKey, 0, macKey, 0, macKeySize);
                 Array.Copy(symmetricKey, macKeySize, encKey, 0, encKeySize);
-                
-                Console.WriteLine($"DecryptWithCbcHs: MAC key: {Convert.ToHexString(macKey)}");
-                Console.WriteLine($"DecryptWithCbcHs: Enc key: {Convert.ToHexString(encKey)}");
 
                 // Try both interpretations of RFC 7518 - with and without the AL field
                 // to see which one produces the correct HMAC
@@ -251,17 +248,7 @@ namespace WebAppNetCore
                             {
                                 var decryptedBytes = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
                                 Console.WriteLine($"DecryptWithCbcHs: AES-CBC decryption successful, plaintext length={decryptedBytes.Length} bytes");
-                                
-                                try 
-                                {
-                                    var testString = System.Text.Encoding.UTF8.GetString(decryptedBytes);
-                                    Console.WriteLine($"DecryptWithCbcHs: Decrypted text preview: {testString.Substring(0, Math.Min(100, testString.Length))}...");
-                                }
-                                catch 
-                                {
-                                    Console.WriteLine($"DecryptWithCbcHs: Warning - Decrypted bytes do not appear to be valid UTF-8");
-                                }
-                                
+
                                 return decryptedBytes;
                             }
                         }

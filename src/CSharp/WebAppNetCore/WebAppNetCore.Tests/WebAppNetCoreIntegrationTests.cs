@@ -57,7 +57,7 @@ public sealed class WebAppNetCoreIntegrationTests
         Assert.Contains("Invalid issuer.", await invalidIssuerResponse.Content.ReadAsStringAsync());
 
         using var invalidSessionResponse = await client.GetAsync(
-            "/front-channel-logout?iss=https%3A%2F%2Fprovider.test&sid=unused");
+            "/front-channel-logout?sid=unused&iss=" + Uri.EscapeDataString(TestWebApplicationFactory.ProviderIssuer));
         Assert.Equal(HttpStatusCode.OK, invalidSessionResponse.StatusCode);
         Assert.Contains("Invalid session.", await invalidSessionResponse.Content.ReadAsStringAsync());
 
@@ -66,7 +66,7 @@ public sealed class WebAppNetCoreIntegrationTests
         var signOutLocation = signOutResponse.Headers.Location;
         Assert.NotNull(signOutLocation);
         Assert.Equal(
-            "https://provider.test/logout",
+            StubIdentify.EndSessionEndpoint,
             signOutLocation!.GetLeftPart(UriPartial.Path));
         var signOutParameters = QueryHelpers.ParseQuery(signOutLocation.Query);
         Assert.Equal(
@@ -75,7 +75,7 @@ public sealed class WebAppNetCoreIntegrationTests
     }
 
     [Fact]
-    public async Task SignInGetEmitsCustomAuthorizationParametersAndPkceWithoutPar()
+    public async Task SignInEmitsCustomAuthorizationParametersAndPkceWithoutPar()
     {
         using var factory = new TestWebApplicationFactory("GET");
         using var client = CreateClient(factory);
@@ -85,8 +85,12 @@ public sealed class WebAppNetCoreIntegrationTests
             .Get(OpenIdConnectDefaults.AuthenticationScheme);
         Assert.Equal(PushedAuthorizationBehavior.Disable, options.PushedAuthorizationBehavior);
 
-        using var response = await client.GetAsync(
-            "/Account/SignIn?loa=loa-3&max_age=600&forceLogin=true");
+        using var response = await SignInFlow.PostSignInAsync(client, new Dictionary<string, string>
+        {
+            ["loa"] = "loa-3",
+            ["max_age"] = "600",
+            ["forceLogin"] = "true"
+        });
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var location = response.Headers.Location;
@@ -114,8 +118,12 @@ public sealed class WebAppNetCoreIntegrationTests
         using var factory = new TestWebApplicationFactory("POST");
         using var client = CreateClient(factory);
 
-        using var response = await client.GetAsync(
-            "/Account/SignIn?loa=loa-2&max_age=900&isPassive=true");
+        using var response = await SignInFlow.PostSignInAsync(client, new Dictionary<string, string>
+        {
+            ["loa"] = "loa-2",
+            ["max_age"] = "900",
+            ["isPassive"] = "true"
+        });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
@@ -132,6 +140,35 @@ public sealed class WebAppNetCoreIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(ReadFormValue(body, "nonce")));
     }
 
+    [Fact]
+    public async Task SignInRequiresPostWithAnAntiforgeryToken()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = CreateClient(factory);
+
+        using var getResponse = await client.GetAsync("/Account/SignIn?forceLogin=true");
+        Assert.NotEqual(HttpStatusCode.Redirect, getResponse.StatusCode);
+
+        using var postWithoutToken = await client.PostAsync(
+            "/Account/SignIn",
+            new FormUrlEncodedContent(new Dictionary<string, string> { ["forceLogin"] = "true" }));
+        Assert.Equal(HttpStatusCode.BadRequest, postWithoutToken.StatusCode);
+        Assert.Empty(factory.Identify.Requests);
+    }
+
+    [Fact]
+    public async Task AnInvalidBuildingBlockSettingStopsTheApplication()
+    {
+        using var factory = new TestWebApplicationFactory(settings: new Dictionary<string, string?>
+        {
+            ["OpenIdConnectOptions:ValidIdTokenSigningAlgorithms"] = "PS256,none"
+        });
+
+        var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+        Assert.Contains("'OpenIdConnectOptions:ValidIdTokenSigningAlgorithms' has the invalid value 'none'", exception.ToString());
+        await Task.CompletedTask;
+    }
+
     private static HttpClient CreateClient(TestWebApplicationFactory factory)
     {
         return factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -140,11 +177,5 @@ public sealed class WebAppNetCoreIntegrationTests
         });
     }
 
-    private static string ReadFormValue(string html, string name)
-    {
-        var pattern = $"<input[^>]+name=[\\\"']{Regex.Escape(name)}[\\\"'][^>]*value=[\\\"'](?<value>[^\\\"']*)[\\\"']";
-        var match = Regex.Match(html, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        Assert.True(match.Success, $"Form field '{name}' was not found.");
-        return WebUtility.HtmlDecode(match.Groups["value"].Value);
-    }
+    private static string ReadFormValue(string html, string name) => SignInFlow.ReadFormValue(html, name);
 }
