@@ -66,9 +66,12 @@ namespace WebAppNetCore.OAuth
             string replayedProof = null;
             for (var attempt = 1; ; attempt++)
             {
-                // AccessTokenInForm sends the token in the access_token parameter of a form POST (RFC 6750 section 2.2), and
-                // AccessTokenInQuery in the access_token query parameter (RFC 6750 section 2.3), which FAPI 2.0 section 5.3.4 forbids.
-                var form = fault == Fault.AccessTokenInForm ? new Dictionary<string, string> { ["access_token"] = accessToken } : null;
+                // AccessTokenInForm and BearerTokenInForm send the token in the access_token parameter of a form POST (RFC 6750
+                // section 2.2), and AccessTokenInQuery in the access_token query parameter (RFC 6750 section 2.3), which FAPI 2.0
+                // section 5.3.4 forbids.
+                var form = fault == Fault.AccessTokenInForm || fault == Fault.BearerTokenInForm
+                    ? new Dictionary<string, string> { ["access_token"] = accessToken }
+                    : null;
                 var inQuery = fault == Fault.AccessTokenInQuery;
                 var requestUri = inQuery ? QueryHelpers.AddQueryString(userInfoEndpoint, "access_token", accessToken) : userInfoEndpoint;
                 using var request = new HttpRequestMessage(form == null ? HttpMethod.Get : HttpMethod.Post, requestUri);
@@ -139,10 +142,10 @@ namespace WebAppNetCore.OAuth
                     "The fault " + fault + " needs a DPoP-bound access token: sign in with DPoP:BindAccessTokens=true. The UserInfo request was not sent.");
             }
 
-            if (fault == Fault.DPoPSchemeForBearerToken && boundToken)
+            if ((fault == Fault.DPoPSchemeForBearerToken || fault == Fault.BearerTokenInForm) && boundToken)
             {
                 throw new OAuthClientException(
-                    "The fault DPoPSchemeForBearerToken needs an access token that is not bound to a DPoP key: sign in with DPoP:BindAccessTokens=false. The UserInfo request was not sent.");
+                    "The fault " + fault + " needs an access token that is not bound to a DPoP key: sign in with DPoP:BindAccessTokens=false. The UserInfo request was not sent.");
             }
         }
 

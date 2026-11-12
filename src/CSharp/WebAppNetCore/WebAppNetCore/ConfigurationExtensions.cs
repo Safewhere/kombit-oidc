@@ -272,6 +272,37 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// The length of the nonce of the authorization request, from 43 to 64 characters; default 43. Only with
+        /// Testing:EnableFaultInjection, for the live test of the longest nonce that FAPI 2.0 section 5.3.2.2 item 14 allows.
+        /// </summary>
+        public static int NonceLength(this IConfiguration configuration)
+        {
+            var value = configuration["Testing:NonceLength"];
+            if (!configuration.EnableFaultInjection() || string.IsNullOrEmpty(value))
+            {
+                return ShortNonceProtocolValidator.DefaultNonceLength;
+            }
+
+            if (!int.TryParse(value, out var length)
+                || length < ShortNonceProtocolValidator.DefaultNonceLength
+                || length > ShortNonceProtocolValidator.MaximumNonceLength)
+            {
+                throw InvalidSetting("Testing:NonceLength", value, "a number from 43 to 64");
+            }
+
+            return length;
+        }
+
+        /// <summary>
+        /// Keeps the session of the sample after the access token expires, instead of ending it with the token lifetime. Only with
+        /// Testing:EnableFaultInjection, for the live test of an expired access token at UserInfo.
+        /// </summary>
+        public static bool KeepSessionAfterTokenExpiry(this IConfiguration configuration)
+        {
+            return configuration.EnableFaultInjection() && ParseBool(configuration, "Testing:KeepSessionAfterTokenExpiry");
+        }
+
+        /// <summary>
         /// The client ID of another client, for the faults that authenticate as it or name it as the issuer of an assertion.
         /// The faults fail with a message when it has no value.
         /// </summary>
@@ -300,6 +331,8 @@ namespace WebAppNetCore
             }
 
             configuration.EnableFaultInjection();
+            configuration.NonceLength();
+            configuration.KeepSessionAfterTokenExpiry();
             configuration.ValidIdTokenSigningAlgorithms();
             configuration.ClientAssertionAudience();
             configuration.ClientAssertionSigningAlgorithm();

@@ -65,7 +65,9 @@ namespace WebAppNetCore
             connectOptions.ClientId = configuration.ClientId();
             connectOptions.ClientSecret = configuration.ClientSecret();
             connectOptions.ResponseType = configuration.ResponseType();
-            connectOptions.UseTokenLifetime = true;
+            // Testing:KeepSessionAfterTokenExpiry keeps the session of the sample after the access token expires, so that a
+            // UserInfo request with the expired token can show the answer of Identify (scenario DPP-30).
+            connectOptions.UseTokenLifetime = !configuration.KeepSessionAfterTokenExpiry();
             connectOptions.SaveTokens = true;
             connectOptions.ClaimsIssuer = configuration.ClaimsIssuer();
             connectOptions.Authority = configuration.ClaimsIssuer();
@@ -109,7 +111,7 @@ namespace WebAppNetCore
             connectOptions.TokenValidationParameters.ValidateAudience = true;   // by default, when we don't explicitly set ValidAudience, it is set to ClientId
             connectOptions.TokenValidationParameters.ValidateIssuer = true;
             connectOptions.TokenValidationParameters.ValidIssuer = configuration.ClaimsIssuer();
-            connectOptions.ProtocolValidator = new ShortNonceProtocolValidator { RequireNonce = configuration.RequireNonce() };
+            connectOptions.ProtocolValidator = new ShortNonceProtocolValidator(configuration.NonceLength()) { RequireNonce = configuration.RequireNonce() };
             var validIdTokenSigningAlgorithms = configuration.ValidIdTokenSigningAlgorithms();
             if (validIdTokenSigningAlgorithms.Length > 0)
             {
@@ -153,6 +155,19 @@ namespace WebAppNetCore
                     if (session.SignInFault == Fault.ShortCodeVerifier || session.SignInFault == Fault.LongCodeVerifier)
                     {
                         ReplaceCodeVerifier(context, session);
+                    }
+
+                    if (session.SignInFault == Fault.IdTokenNonceMismatch)
+                    {
+                        if (string.IsNullOrEmpty(context.ProtocolMessage.Nonce))
+                        {
+                            // Without a nonce there is nothing to change, and the result would look like an accepted violation.
+                            throw new OAuthClientException("The fault IdTokenNonceMismatch needs RequireNonce=true. The sign-in did not start.");
+                        }
+
+                        // The handler has written the nonce cookie with the first nonce before this event, so Identify gets a nonce
+                        // that the sample does not expect, and returns it in the ID token.
+                        context.ProtocolMessage.Nonce = context.Options.ProtocolValidator.GenerateNonce();
                     }
 
                     if (configuration.UsesDPoPKey())
@@ -240,13 +255,16 @@ namespace WebAppNetCore
                     // The check runs for every authorization response, also an error response, before the handler reads it.
                     var services = context.HttpContext.RequestServices;
                     var metadata = await services.GetRequiredService<IdentifyMetadata>().GetAsync(context.HttpContext.RequestAborted);
-                    var failure = AuthorizationResponseIssuer.Validate(context.ProtocolMessage.Iss, metadata);
-                    services.GetRequiredService<ClientSessionStore>().Get(context.Properties)?.Trace.Add(
+                    var session = services.GetRequiredService<ClientSessionStore>().Get(context.Properties);
+                    var checkedIss = AuthorizationResponseIssuerFault(session?.SignInFault ?? Fault.None, context.ProtocolMessage.Iss);
+                    var failure = AuthorizationResponseIssuer.Validate(checkedIss, metadata);
+                    session?.Trace.Add(
                         "Authorization response",
                         failure ?? "iss check passed (RFC 9207)",
                         new[]
                         {
                             ProtocolTrace.Detail("iss", context.ProtocolMessage.Iss ?? "(none)"),
+                            ProtocolTrace.Detail("iss checked by the sample", checkedIss ?? "(none)"),
                             ProtocolTrace.Detail("authorization_response_iss_parameter_supported", metadata.AuthorizationResponseIssParameterSupported.ToString()),
                             ProtocolTrace.Detail("code", string.IsNullOrEmpty(context.ProtocolMessage.Code) ? "(none)" : "(present)"),
                             ProtocolTrace.Detail("error", context.ProtocolMessage.Error ?? "(none)"),
@@ -413,6 +431,23 @@ namespace WebAppNetCore
         }
 
         /// <summary>
+        /// The iss that the sample checks: another issuer (AuthorizationResponseIssMismatch), no iss (AuthorizationResponseIssMissing),
+        /// or the received value. Identify cannot send a wrong iss, so these faults show the client check of RFC 9207 in a live run.
+        /// </summary>
+        internal static string AuthorizationResponseIssuerFault(Fault fault, string iss)
+        {
+            switch (fault)
+            {
+                case Fault.AuthorizationResponseIssMismatch:
+                    return "https://fault.invalid/runtime/oauth2";
+                case Fault.AuthorizationResponseIssMissing:
+                    return null;
+                default:
+                    return iss;
+            }
+        }
+
+        /// <summary>
         /// The browser request of a browser request fault: scope next to request_uri (ExtraBrowserParameter), redirect_uri
         /// /fault-redirect on the origin of the pushed redirect URI (ExtraBrowserRedirectUri), or request_uri without client_id
         /// (BrowserWithoutClientId).
@@ -423,6 +458,8 @@ namespace WebAppNetCore
             {
                 case Fault.ExtraBrowserParameter:
                     return QueryHelpers.AddQueryString(location, "scope", scope);
+                case Fault.ExtraBrowserScopeNotPushed:
+                    return QueryHelpers.AddQueryString(location, "scope", scope + " " + TokenClient.NotGrantedScope);
                 case Fault.ExtraBrowserRedirectUri:
                     return QueryHelpers.AddQueryString(location, "redirect_uri", new Uri(new Uri(redirectUri), "/fault-redirect").ToString());
                 default:

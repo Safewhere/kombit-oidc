@@ -181,7 +181,15 @@ namespace WebAppNetCore.OAuth
         SampleApiReplayProof,
         SampleApiProofWrongHtm,
         SampleApiProofWrongHtu,
-        SampleApiProofWrongAth
+        SampleApiProofWrongAth,
+
+        // US38481: edge cases of the release check. A browser scope that the pushed request does not have, the client checks of the
+        // ID token nonce and of the authorization response issuer, and an unbound access token in the form of a UserInfo request.
+        ExtraBrowserScopeNotPushed,
+        IdTokenNonceMismatch,
+        AuthorizationResponseIssMismatch,
+        AuthorizationResponseIssMissing,
+        BearerTokenInForm
     }
 
     public static class FaultInjection
@@ -209,7 +217,8 @@ namespace WebAppNetCore.OAuth
             Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId, Fault.AssertionHeaderJwk, Fault.AssertionHeaderX5c, Fault.AssertionHeaderJku,
             Fault.ParUnknownScope, Fault.ProofWithoutJwk, Fault.AssertionWithoutIss, Fault.AssertionWithoutSub, Fault.AssertionAudienceTrailingSlash,
             Fault.AssertionLongLived, Fault.WrongAssertionType, Fault.ShortCodeVerifier, Fault.LongCodeVerifier, Fault.TokenWithoutRedirectUri,
-            Fault.MtlsParAtNormalEndpoint, Fault.MtlsTokenAtNormalEndpoint
+            Fault.MtlsParAtNormalEndpoint, Fault.MtlsTokenAtNormalEndpoint,
+            Fault.ExtraBrowserScopeNotPushed, Fault.IdTokenNonceMismatch, Fault.AuthorizationResponseIssMismatch, Fault.AuthorizationResponseIssMissing
         };
 
         public static readonly Fault[] IntrospectionFaults =
@@ -223,9 +232,12 @@ namespace WebAppNetCore.OAuth
         };
 
         /// <summary>The sign-in faults that change the browser request after the push.</summary>
-        public static readonly Fault[] BrowserRequestFaults = { Fault.ExtraBrowserParameter, Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId };
+        public static readonly Fault[] BrowserRequestFaults =
+        {
+            Fault.ExtraBrowserParameter, Fault.ExtraBrowserRedirectUri, Fault.BrowserWithoutClientId, Fault.ExtraBrowserScopeNotPushed
+        };
 
-        public static readonly Fault[] ClientCredentialsFaults = { Fault.PasswordGrant };
+        public static readonly Fault[] ClientCredentialsFaults = { Fault.PasswordGrant, Fault.NoDPoPProof };
 
         public static readonly Fault[] UserInfoFaults =
         {
@@ -233,7 +245,7 @@ namespace WebAppNetCore.OAuth
             Fault.UserInfoProofOtherKey, Fault.UserInfoProofWrongHtm, Fault.UserInfoProofWrongHtu, Fault.UserInfoProofWrongAth,
             Fault.DPoPSchemeForBearerToken, Fault.AccessTokenInForm, Fault.DPoPSchemeWithoutProof,
             Fault.UserInfoProofAlgNone, Fault.UserInfoProofSignatureOtherKey, Fault.UserInfoProofWithoutJti, Fault.UserInfoProofIatOld,
-            Fault.AccessTokenInQuery, Fault.IdTokenAtUserInfo, Fault.MtlsUserInfoAtNormalEndpoint
+            Fault.AccessTokenInQuery, Fault.IdTokenAtUserInfo, Fault.MtlsUserInfoAtNormalEndpoint, Fault.BearerTokenInForm
         };
 
         public static readonly Fault[] SampleApiFaults =
@@ -256,7 +268,7 @@ namespace WebAppNetCore.OAuth
             [Fault.AssertionAudienceArray] = "Client assertion aud as a JSON array. Expected: invalid_client with clientAssertion.audience=issuer.",
             [Fault.AssertionFutureIat] = "Client assertion iat 120 seconds in the future. Expected: invalid_client when clientJwt.clockSkewInSeconds is below 120.",
             [Fault.ParProofKeyMismatch] = "A PAR proof of another key than dpop_jkt. Expected: invalid_request.",
-            [Fault.NoDPoPProof] = "No proof at the token endpoint. Expected: invalid_dpop_proof when DPoP is required; an error for a bound code (verify).",
+            [Fault.NoDPoPProof] = "No proof at the token endpoint, also for client credentials. Expected: invalid_dpop_proof when DPoP is required; an error for a bound code (verify).",
             [Fault.WrongDPoPKey] = "A token proof of a new key. Expected: invalid_grant for a bound code.",
             [Fault.WrongHtu] = "A token proof with the authorization endpoint as htu. Expected: invalid_dpop_proof.",
             [Fault.SmallDPoPKey] = "A token proof of an RSA 1024 key. Expected: invalid_dpop_proof.",
@@ -368,7 +380,12 @@ namespace WebAppNetCore.OAuth
             [Fault.SampleApiReplayProof] = "Two requests with the same proof. Expected: the first succeeds, the second gets HTTP 401 invalid_dpop_proof.",
             [Fault.SampleApiProofWrongHtm] = "A proof with the other HTTP method in htm. Expected: HTTP 401 invalid_dpop_proof.",
             [Fault.SampleApiProofWrongHtu] = "A proof with the URL of the other operation in htu. Expected: HTTP 401 invalid_dpop_proof.",
-            [Fault.SampleApiProofWrongAth] = "A proof with the hash of another value in ath. Expected: HTTP 401 invalid_dpop_proof."
+            [Fault.SampleApiProofWrongAth] = "A proof with the hash of another value in ath. Expected: HTTP 401 invalid_dpop_proof.",
+            [Fault.ExtraBrowserScopeNotPushed] = "scope with the pushed scope and fapi-fault-not-granted next to request_uri in the browser request (GET with PAR only; otherwise the sign-in does not start). Expected: the sign-in succeeds with the pushed scope, because Identify uses only the pushed values; invalid_scope shows that Identify reads the browser scope.",
+            [Fault.IdTokenNonceMismatch] = "The authorization request has another nonce than the nonce that the sample keeps for the sign-in. Expected: the sample rejects the ID token because of the nonce.",
+            [Fault.AuthorizationResponseIssMismatch] = "The sample checks the iss of the authorization response as if it were another issuer. Expected: the sample stops the sign-in before it redeems the code.",
+            [Fault.AuthorizationResponseIssMissing] = "The sample checks the authorization response as if it had no iss. Expected: the sample stops the sign-in when discovery advertises authorization_response_iss_parameter_supported.",
+            [Fault.BearerTokenInForm] = "A POST with an access token without cnf.jkt in the access_token form parameter, without an Authorization header. Needs DPoP:BindAccessTokens=false. Expected: HTTP 200 (RFC 6750 section 2.2)."
         };
 
         public static string Describe(Fault fault) => ExpectedResults.TryGetValue(fault, out var description) ? description : string.Empty;

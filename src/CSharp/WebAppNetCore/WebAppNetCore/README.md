@@ -112,6 +112,8 @@ All keys are in the `OpenIdConnectOptions` section, except the keys that start w
 | `ValidIdTokenSigningAlgorithms` | comma list; empty keeps the library default | FAPI 5.4.1 | The allowed algorithms of the ID token signature. |
 | `Testing:EnableFaultInjection` | `true`, `false`; default `false` | None | Shows the fault lists of [fault injection](#fault-injection). Never `true` for a production client. |
 | `Testing:OtherClientId` | a client ID; no default | None | The client ID of another client, for the faults `RedeemAsOtherClient`, `RefreshAsOtherClient`, `AssertionIssuerNotClient`, and `ClientIdNotSubject`. Without a value, these faults fail with a message. |
+| `Testing:NonceLength` | 43 to 64; default 43 | FAPI 5.3.2.2 item 14 | The length of the nonce of the authorization request. Only with `Testing:EnableFaultInjection`, to show that Identify accepts a nonce of 64 characters. |
+| `Testing:KeepSessionAfterTokenExpiry` | `true`, `false`; default `false` | None | The session of the sample does not end with the access token lifetime, so that **Call UserInfo** can send an expired access token. Only with `Testing:EnableFaultInjection`. |
 | `SampleApi:BaseUrl` | a URL; default empty | None | The base URL of the [sample resource server](#the-sample-resource-server-sampleapi), for example `https://localhost:44392`. Empty turns off its buttons and its scopes. |
 | `SampleApi:Scopes` | a space list; default `sample-api.read sample-api.write` | FAPI 5.3.3.1 item 13 | The scopes that the sign-in requests in addition to `Scope` when `SampleApi:BaseUrl` has a value. |
 

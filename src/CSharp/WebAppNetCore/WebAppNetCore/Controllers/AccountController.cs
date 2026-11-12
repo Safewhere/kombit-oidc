@@ -236,7 +236,7 @@ namespace WebAppNetCore.Controllers
 
         // POST: /Account/ClientCredentials
         // Gets a token with the client credentials grant, without a sign-in. With DPoP:BindAccessTokens, the request has a proof of a new key.
-        // The fault PasswordGrant sends a password grant instead.
+        // The fault PasswordGrant sends a password grant instead, and NoDPoPProof sends the request without the proof.
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> ClientCredentials([FromServices] TokenClient tokenClient, [FromForm] string fault)
@@ -245,7 +245,13 @@ namespace WebAppNetCore.Controllers
             var grantFault = FaultInjection.Parse(fault, configuration, FaultInjection.ClientCredentialsFaults);
             try
             {
-                var response = await tokenClient.ClientCredentialsAsync(dpopKey, grantFault, HttpContext.RequestAborted);
+                if (grantFault == Fault.NoDPoPProof && dpopKey == null)
+                {
+                    // Without DPoP the request has no proof anyway, and the result would look like an accepted violation.
+                    throw new OAuthClientException("The fault NoDPoPProof needs DPoP:BindAccessTokens=true. The client credentials request was not sent.");
+                }
+
+                var response = await tokenClient.ClientCredentialsAsync(grantFault == Fault.NoDPoPProof ? null : dpopKey, grantFault, HttpContext.RequestAborted);
                 var jkt = AccessTokenInspector.ReadConfirmationThumbprint(response.AccessToken);
                 var bound = dpopKey != null && jkt == dpopKey.Thumbprint;
                 TempData[ProtocolViewModel.ResultKey] = string.Format(
